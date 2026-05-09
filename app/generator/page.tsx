@@ -145,13 +145,19 @@ export default function GeneratorPage() {
               </div>
 
               <div className="relative aspect-[3/2] w-full overflow-hidden rounded-[1.5rem] bg-slate-100 shadow-md">
-                <Image
-                  src={result.imageUrl}
-                  alt="Generated Card"
-                  fill
-                  className="object-cover"
-                  unoptimized // in case it's a base64 string
-                />
+                {result.imageUrl ? (
+                  <Image
+                    src={result.imageUrl}
+                    alt="Generated Card"
+                    fill
+                    className="object-cover"
+                    unoptimized // in case it's a base64 string
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-slate-400">
+                    No image URL returned
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 rounded-2xl bg-amber-50 p-5">

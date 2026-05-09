@@ -136,7 +136,35 @@ const copy = {
       "大巴窑地铁站附近新的有盖走道本周开放。",
     ],
   },
-} satisfies Record<"en" | "zh", LocalizedCopy>;
+  ms: {
+    greeting: (name: string) => `Selamat pagi, ${name}`,
+    subcopy: "Sabtu, 9 Mei · Cerah 28°C",
+    listen: "Tekan untuk cakap",
+    today: "Hari ini",
+    news: "Berita tempatan",
+    share: "Kongsi pagi",
+    moodPrompt: "Apa khabar hari ini?",
+    moodSaved: "Terima kasih. Saya dah simpan.",
+    moodSaving: "Menyimpan...",
+    moodSaveError: "Tak dapat simpan. Tekan lagi sekali.",
+    reply: "Pagi dah sedia. Saya akan bacakan.",
+    stickers: [
+      { id: "energetic", label: "Bertenaga" },
+      { id: "tired", label: "Penat" },
+      { id: "down", label: "Sedih" },
+      { id: "grateful", label: "Bersyukur" },
+      { id: "confused", label: "Keliru" },
+    ],
+    reminders: [
+      { time: "08:00", title: "Ubat darah tinggi", icon: Pill, status: "Sedia" },
+      { time: "14:00", title: "Temujanji poliklinik", icon: CalendarClock, status: "Nanti" },
+    ],
+    newsItems: [
+      "Baucar CDC kini boleh digunakan di lebih banyak pasar raya berdekatan.",
+      "Laluan pejalan kaki berbumbung baharu dibuka berhampiran MRT Toa Payoh minggu ini.",
+    ],
+  },
+} satisfies Record<"en" | "zh" | "ms", LocalizedCopy>;
 
 const getMoodStorageKey = (seniorId: string) => {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
@@ -168,7 +196,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const [rems, setRems] = useState<ReminderRow[]>([]);
   const [contextReady, setContextReady] = useState(false);
 
-  const content = copy[isChineseReadingLanguage(language) ? "zh" : "en"];
+  const content = (copy as any)[language === "ms" ? "ms" : isChineseReadingLanguage(language) ? "zh" : "en"] as LocalizedCopy;
 
   useEffect(() => {
     async function loadData() {
@@ -206,14 +234,16 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
     [todaysReminders],
   );
 
-  const localNewsSummaries = useMemo(() => content.newsItems, [content.newsItems]);
-
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const imagePath = morningData?.imageUrl ?? design.heroImage ?? "/morning_illustration.png";
-  const pageUrl = typeof window === "undefined" ? "" : window.location.href;
+  const [pageUrl, setPageUrl] = useState("");
+
+  useEffect(() => {
+    setPageUrl(window.location.href);
+  }, []);
   const whatsAppShareUrl = useMemo(() => {
     const origin = pageUrl ? new URL(pageUrl).origin : "http://localhost:3000";
     const shareImageUrl = imagePath.startsWith("data:") ? pageUrl : new URL(imagePath, origin).toString();
@@ -302,10 +332,8 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
             nickname: senior.nickname,
             language: language,
             designId: design.id,
-            weather: 'sunny, 28 degrees',
             medicines: medicineSummaries,
             reminders: reminderSummaries,
-            localNews: localNewsSummaries,
           })
         });
         if (res.ok) {
@@ -319,7 +347,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
       }
     }
     generateMorning();
-  }, [senior.nickname, language, design.id, medicineSummaries, reminderSummaries, localNewsSummaries, contextReady]);
+  }, [senior.nickname, language, design.id, medicineSummaries, reminderSummaries, contextReady]);
 
   useEffect(() => {
     const script = morningData?.spokenScript ?? morningData?.greeting;

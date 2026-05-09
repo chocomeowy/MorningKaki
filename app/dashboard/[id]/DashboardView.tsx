@@ -66,12 +66,7 @@ export function DashboardView({ id }: { id: string }) {
             .single();
             
           if (error) {
-            console.error("Supabase fetch error details:", {
-              message: error.message,
-              code: error.code,
-              details: error.details,
-              hint: error.hint
-            });
+            console.error("Supabase fetch error for id", id, ":", error);
             // Fallback to demo if record not found or RLS blocks it
             setSenior({
               nickname: "Ah Gong (Demo)",
