@@ -2,203 +2,234 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Mic, Volume2, Share2, Sun } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import {
+  BellRing,
+  CalendarClock,
+  Check,
+  ImageIcon,
+  Mic,
+  Pill,
+  Share2,
+  Sun,
+  Volume2,
+} from "lucide-react";
+import {
+  defaultMorningDesign,
+  getMorningDesign,
+  morningDesignStorageKey,
+  type MorningDesign,
+} from "@/lib/morning-designs";
+
+const copy = {
+  en: {
+    greeting: "Good morning, Ah Gong",
+    subcopy: "Saturday, 9 May · Sunny 28°C",
+    listen: "Tap to talk",
+    today: "Today",
+    news: "Local news",
+    share: "Share morning",
+    moodPrompt: "How are you feeling?",
+    reply: "Morning is ready. I will read it aloud.",
+    stickers: [
+      { id: "energetic", emoji: "😊", label: "Energetic" },
+      { id: "tired", emoji: "😴", label: "Tired" },
+      { id: "down", emoji: "🌧️", label: "Down" },
+      { id: "grateful", emoji: "❤️", label: "Grateful" },
+      { id: "confused", emoji: "😕", label: "Confused" },
+    ],
+    reminders: [
+      { time: "08:00", title: "Blood pressure medicine", icon: Pill, status: "Ready" },
+      { time: "14:00", title: "Polyclinic checkup", icon: CalendarClock, status: "Later" },
+    ],
+    newsItems: [
+      "CDC vouchers can now be used at more nearby supermarkets.",
+      "New sheltered walkway opens near Toa Payoh MRT this week.",
+    ],
+  },
+  zh: {
+    greeting: "早上好，阿公",
+    subcopy: "5月9日 星期六 · 晴朗 28°C",
+    listen: "按这里说话",
+    today: "今天",
+    news: "本地新闻",
+    share: "分享早安",
+    moodPrompt: "今天感觉怎样？",
+    reply: "早晨内容准备好了，我会读给你听。",
+    stickers: [
+      { id: "energetic", emoji: "😊", label: "精神好" },
+      { id: "tired", emoji: "😴", label: "很累" },
+      { id: "down", emoji: "🌧️", label: "心情差" },
+      { id: "grateful", emoji: "❤️", label: "感恩" },
+      { id: "confused", emoji: "😕", label: "不明白" },
+    ],
+    reminders: [
+      { time: "08:00", title: "吃高血压药", icon: Pill, status: "准备好" },
+      { time: "14:00", title: "去综合诊所看医生", icon: CalendarClock, status: "稍后" },
+    ],
+    newsItems: [
+      "CDC购物券现在可以在更多附近超市使用。",
+      "大巴窑地铁站附近新的有盖走道本周开放。",
+    ],
+  },
+};
 
 export default function SeniorPage() {
   const [language, setLanguage] = useState<"en" | "zh">("en");
-  const [selectedMood, setSelectedMood] = useState<string | null>(null);
-
-  const t = {
-    en: {
-      greeting: "Good morning, Ah Gong!",
-      weather: "Sunny 28°C",
-      tapToTalk: "TAP TO TALK",
-      today: "TODAY",
-      news: "LOCAL NEWS",
-      share: "Share to Family",
-      stickers: [
-        { id: "energetic", emoji: "😊", label: "Energetic" },
-        { id: "tired", emoji: "😴", label: "Tired" },
-        { id: "down", emoji: "🌧️", label: "Down" },
-        { id: "grateful", emoji: "❤️", label: "Grateful" },
-        { id: "confused", emoji: "😕", label: "Confused" },
-      ],
-      reminders: [
-        { time: "08:00 AM", title: "Blood Pressure Meds", type: "medication" },
-        { time: "02:00 PM", title: "Polyclinic Appointment", type: "appointment" },
-      ],
-      newsItems: [
-        {
-          title: "New hawker centre opening in your neighbourhood next month.",
-          source: "CNA",
-        },
-        {
-          title: "CDC vouchers can now be used at more local supermarkets.",
-          source: "Straits Times",
-        },
-      ],
-    },
-    zh: {
-      greeting: "早上好，阿公！",
-      weather: "晴朗 28°C",
-      tapToTalk: "按住说话",
-      today: "今天日程",
-      news: "本地新闻",
-      share: "分享给家人",
-      stickers: [
-        { id: "energetic", emoji: "😊", label: "精神好" },
-        { id: "tired", emoji: "😴", label: "很累" },
-        { id: "down", emoji: "🌧️", label: "心情差" },
-        { id: "grateful", emoji: "❤️", label: "感恩" },
-        { id: "confused", emoji: "😕", label: "不明白" },
-      ],
-      reminders: [
-        { time: "早上 08:00", title: "吃高血压药", type: "medication" },
-        { time: "下午 02:00", title: "去综合诊所看医生", type: "appointment" },
-      ],
-      newsItems: [
-        {
-          title: "下个月你家附近将新开一家小贩中心。",
-          source: "CNA",
-        },
-        {
-          title: "CDC购物券现在可以在更多本地超市使用了。",
-          source: "Straits Times",
-        },
-      ],
-    },
-  };
-
-  const content = t[language];
+  const [selectedMood, setSelectedMood] = useState("energetic");
+  const [design] = useState<MorningDesign>(() => {
+    if (typeof window === "undefined") {
+      return defaultMorningDesign;
+    }
+    return getMorningDesign(window.localStorage.getItem(morningDesignStorageKey));
+  });
+  const content = copy[language];
 
   return (
-    <div className="min-h-screen bg-amber-50 pb-10 font-sans text-lg text-slate-800 selection:bg-amber-200">
-      {/* 1. App Bar */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white/80 backdrop-blur-md sticky top-0 z-10 shadow-sm">
-        <h1 className="text-2xl font-bold text-amber-700 tracking-tight">MorningKaki</h1>
-        <div className="flex bg-amber-100 rounded-full p-1 border border-amber-200">
-          <button
-            onClick={() => setLanguage("en")}
-            className={`px-4 py-1 rounded-full text-lg font-medium transition-colors ${
-              language === "en" ? "bg-white text-amber-900 shadow-sm" : "text-amber-700/70"
-            }`}
-          >
-            EN
-          </button>
-          <button
-            onClick={() => setLanguage("zh")}
-            className={`px-4 py-1 rounded-full text-lg font-medium transition-colors ${
-              language === "zh" ? "bg-white text-amber-900 shadow-sm" : "text-amber-700/70"
-            }`}
-          >
-            中
-          </button>
-        </div>
-      </header>
+    <main className="min-h-screen bg-[#fff8ed] text-slate-950">
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
+        <header className="flex items-center justify-between px-5 pb-3 pt-4">
+          <div>
+            <p className="text-2xl font-extrabold tracking-tight text-amber-800">MorningKaki</p>
+            <p className="text-lg font-bold text-slate-500">{content.reply}</p>
+          </div>
+          <div className="flex rounded-full border border-amber-200 bg-white p-1 shadow-sm">
+            {(["en", "zh"] as const).map((item) => (
+              <button
+                key={item}
+                onClick={() => setLanguage(item)}
+                className={`min-h-10 rounded-full px-4 text-lg font-extrabold ${
+                  language === item ? "bg-amber-500 text-white" : "text-amber-800"
+                }`}
+              >
+                {item === "en" ? "EN" : "中"}
+              </button>
+            ))}
+          </div>
+        </header>
 
-      {/* 2. Illustration */}
-      <div className="w-full relative h-[40vh] bg-amber-100">
-        <Image
-          src="/morning_illustration.png"
-          alt="Morning Illustration"
-          fill
-          className="object-cover"
-          priority
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-amber-50 to-transparent bottom-0 h-1/3 mt-auto" />
-      </div>
+        <section className="px-4">
+          <MorningCard design={design} content={content} />
+        </section>
 
-      <main className="px-6 -mt-8 relative z-10 flex flex-col gap-8">
-        {/* 3. Greeting */}
-        <div className="text-center bg-white/90 backdrop-blur-sm p-6 rounded-3xl shadow-lg border border-amber-100">
-          <h2 className="text-4xl font-extrabold text-slate-800 mb-2 leading-tight">
-            {content.greeting}
-          </h2>
-          <div className="flex items-center justify-center gap-2 text-amber-700 font-medium text-xl mt-3">
-            <span>{new Date().toLocaleDateString(language === "en" ? "en-SG" : "zh-CN", { weekday: 'long', month: 'short', day: 'numeric' })}</span>
-            <span>•</span>
-            <span className="flex items-center gap-1">
-              <Sun className="w-6 h-6 text-orange-500" />
-              {content.weather}
+        <section className="mt-4 grid grid-cols-[1fr_auto] gap-3 px-4">
+          <button className="flex min-h-24 items-center justify-center gap-4 rounded-[1.75rem] bg-slate-950 px-5 text-left text-white shadow-lg shadow-slate-950/15 active:scale-[0.98]">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/15">
+              <Mic className="h-8 w-8" />
             </span>
-          </div>
-        </div>
+            <span className="text-2xl font-extrabold">{content.listen}</span>
+          </button>
+          <button className="flex min-h-24 w-24 flex-col items-center justify-center rounded-[1.75rem] bg-[#25D366] text-white shadow-lg shadow-green-500/20">
+            <Share2 className="h-8 w-8" />
+            <span className="mt-1 text-lg font-bold leading-tight">{content.share}</span>
+          </button>
+        </section>
 
-        {/* 4. Tap to Talk Button */}
-        <button className="w-full py-6 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 active:scale-95 transition-all text-white rounded-[2rem] shadow-xl shadow-orange-500/20 flex flex-col items-center justify-center gap-3 border-4 border-white">
-          <div className="bg-white/20 p-4 rounded-full">
-            <Mic className="w-12 h-12" />
-          </div>
-          <span className="text-2xl font-bold tracking-wide">{content.tapToTalk}</span>
-        </button>
-
-        {/* 5. Mood Stickers */}
-        <section>
-          <div className="flex justify-between items-center bg-white p-3 rounded-[2rem] shadow-sm border border-amber-100 overflow-x-auto gap-2 no-scrollbar">
+        <section className="mt-5 px-4">
+          <p className="mb-3 text-xl font-extrabold">{content.moodPrompt}</p>
+          <div className="grid grid-cols-5 gap-2">
             {content.stickers.map((sticker) => (
               <button
                 key={sticker.id}
                 onClick={() => setSelectedMood(sticker.id)}
-                className={`flex flex-col items-center gap-1 p-2 min-w-[70px] rounded-2xl transition-all ${
-                  selectedMood === sticker.id
-                    ? "bg-amber-100 scale-110 shadow-sm border border-amber-200"
-                    : "hover:bg-amber-50 opacity-80"
+                className={`min-h-24 rounded-[1.35rem] border bg-white p-2 text-center shadow-sm ${
+                  selectedMood === sticker.id ? "border-amber-400 ring-4 ring-amber-100" : "border-amber-100"
                 }`}
               >
-                <span className="text-4xl filter drop-shadow-sm">{sticker.emoji}</span>
-                <span className={`text-sm font-medium ${selectedMood === sticker.id ? 'text-amber-900' : 'text-slate-500'}`}>{sticker.label}</span>
+                <span className="block text-4xl">{sticker.emoji}</span>
+                <span className="mt-1 block text-lg font-extrabold leading-tight text-slate-600">{sticker.label}</span>
               </button>
             ))}
           </div>
         </section>
 
-        {/* 6. Today Section */}
-        <section>
-          <h3 className="text-2xl font-bold text-slate-800 mb-4 px-2">{content.today}</h3>
-          <div className="flex flex-col gap-4">
-            {content.reminders.map((reminder, idx) => (
-              <Card key={idx} className="border-none shadow-sm bg-white rounded-3xl overflow-hidden">
-                <CardContent className="p-0 flex items-stretch">
-                  <div className={`w-3 ${reminder.type === 'medication' ? 'bg-blue-400' : 'bg-purple-400'}`} />
-                  <div className="p-5 flex-1 flex flex-col justify-center">
-                    <span className="text-amber-600 font-bold text-lg mb-1">{reminder.time}</span>
-                    <span className="text-xl font-semibold text-slate-800">{reminder.title}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+        <section className="mt-5 space-y-3 px-4">
+          <SectionTitle title={content.today} icon={BellRing} />
+          {content.reminders.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.title} className="flex min-h-20 items-center gap-4 rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-amber-100">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                  <Icon className="h-6 w-6" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-lg font-extrabold">{item.title}</p>
+                  <p className="text-base font-bold text-slate-500">{item.time}</p>
+                </div>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-lg font-extrabold text-emerald-700">
+                  {item.status}
+                </span>
+              </div>
+            );
+          })}
         </section>
 
-        {/* 7. News Section */}
-        <section>
-          <h3 className="text-2xl font-bold text-slate-800 mb-4 px-2">{content.news}</h3>
-          <div className="flex flex-col gap-4">
-            {content.newsItems.map((news, idx) => (
-              <Card key={idx} className="border-amber-100 shadow-sm bg-white rounded-3xl overflow-hidden group">
-                <CardContent className="p-5 flex gap-4 items-start">
-                  <button className="mt-1 flex-shrink-0 bg-amber-100 text-amber-700 p-3 rounded-full hover:bg-amber-200 active:scale-95 transition-all">
-                    <Volume2 className="w-8 h-8" />
-                  </button>
-                  <div className="flex-1">
-                    <p className="text-xl font-medium text-slate-800 leading-snug mb-2">{news.title}</p>
-                    <Badge variant="secondary" className="bg-slate-100 text-slate-500 text-sm">{news.source}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+        <section className="mt-5 space-y-3 px-4 pb-8">
+          <SectionTitle title={content.news} icon={Volume2} />
+          {content.newsItems.map((item) => (
+            <button key={item} className="flex w-full items-center gap-4 rounded-[1.5rem] bg-white p-4 text-left shadow-sm ring-1 ring-amber-100">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-800">
+                <Volume2 className="h-6 w-6" />
+              </span>
+              <span className="text-lg font-bold leading-snug">{item}</span>
+            </button>
+          ))}
         </section>
+      </div>
+    </main>
+  );
+}
 
-        {/* 8. Share Button */}
-        <Button size="lg" className="w-full mt-4 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-full h-16 text-xl font-bold shadow-lg shadow-green-500/20 gap-3">
-          <Share2 className="w-6 h-6" />
-          {content.share}
-        </Button>
-      </main>
+function MorningCard({
+  design,
+  content,
+}: {
+  design: MorningDesign;
+  content: (typeof copy)["en"];
+}) {
+  if (design.heroImage) {
+    return (
+      <div className="relative h-[38vh] min-h-72 overflow-hidden rounded-[2rem] bg-amber-200 shadow-[0_18px_60px_rgba(147,92,14,0.16)]">
+        <Image
+          src={design.heroImage}
+          alt="Generated good morning card"
+          fill
+          priority
+          className="object-cover"
+        />
+        <div className="absolute inset-x-3 bottom-3 rounded-[1.5rem] bg-white/90 p-3 shadow-lg backdrop-blur">
+          <div className="flex items-center gap-2 text-lg font-extrabold text-amber-700">
+            <Sun className="h-5 w-5" />
+            {content.subcopy}
+          </div>
+          <p className="mt-1 text-2xl font-black leading-tight text-slate-950">{content.greeting}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`relative h-[38vh] min-h-72 overflow-hidden rounded-[2rem] ${design.previewClassName} shadow-[0_18px_60px_rgba(147,92,14,0.16)]`}>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,.9),transparent_22%),radial-gradient(circle_at_80%_18%,rgba(244,63,94,.5),transparent_18%),radial-gradient(circle_at_28%_86%,rgba(234,179,8,.55),transparent_18%)]" />
+      <div className="absolute inset-x-4 top-4 rounded-2xl bg-white/75 p-3 text-center shadow-sm backdrop-blur">
+        <p className="text-3xl font-black tracking-wide text-amber-700">GOOD MORNING</p>
+        <p className="text-5xl font-black text-red-700">早安</p>
+      </div>
+      <div className="absolute bottom-20 left-5 rounded-2xl bg-white/80 px-4 py-3 text-xl font-black text-emerald-800 shadow-sm">
+        Live happy, age well
+      </div>
+      <div className="absolute bottom-4 right-4 flex items-center gap-2 rounded-full bg-white/85 px-4 py-2 text-base font-black text-slate-700 shadow-sm">
+        <ImageIcon className="h-5 w-5 text-amber-700" />
+        {design.shortName}
+      </div>
+    </div>
+  );
+}
+
+function SectionTitle({ title, icon: Icon }: { title: string; icon: typeof Check }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon className="h-5 w-5 text-amber-700" />
+      <h2 className="text-xl font-extrabold">{title}</h2>
     </div>
   );
 }
