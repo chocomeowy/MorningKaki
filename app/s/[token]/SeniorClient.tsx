@@ -232,34 +232,25 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   }, []);
   const handleShare = async () => {
     const origin = pageUrl ? new URL(pageUrl).origin : window.location.origin;
-    const shareImageUrl = imagePath.startsWith("data:") ? imagePath : new URL(imagePath, origin).toString();
-    const greeting = morningData?.greeting ?? content.greeting(senior.nickname);
-    
-    const lines = isChineseReadingLanguage(language)
-      ? [
-          `${greeting}！`,
-          content.subcopy,
-          "今天的早安：",
-          pageUrl,
-        ]
-      : [
-          `${greeting}!`,
-          content.subcopy,
-          "Today's good morning:",
-          pageUrl,
-        ];
-    const text = lines.join("\n");
+    const rawImageUrl = imagePath.startsWith("data:")
+      ? imagePath
+      : new URL(imagePath, origin).toString();
+
+    // Route through server proxy to avoid CORS issues with Supabase URLs
+    const proxiedUrl = rawImageUrl.startsWith("data:")
+      ? rawImageUrl
+      : `/api/image-proxy?url=${encodeURIComponent(rawImageUrl)}`;
 
     try {
       if (navigator.share) {
-        const response = await fetch(shareImageUrl);
+        const response = await fetch(proxiedUrl);
         const blob = await response.blob();
-        const file = new File([blob], 'morning.jpg', { type: blob.type || 'image/jpeg' });
+        const file = new File([blob], "morning.jpg", { type: blob.type || "image/jpeg" });
 
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
-            text: text,
             files: [file],
+            text: pageUrl,
           });
           return;
         }
@@ -268,8 +259,8 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
       console.warn("Native file share failed", err);
     }
 
-    // Fallback
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+    // Fallback: open WhatsApp with just the link
+    window.open(`https://wa.me/?text=${encodeURIComponent(pageUrl)}`, "_blank");
   };
 
   const handleMorningImageReady = useCallback(() => {
