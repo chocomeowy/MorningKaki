@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, ImageIcon } from "lucide-react";
 import {
   defaultMorningDesign,
@@ -10,16 +10,17 @@ import {
 } from "@/lib/morning-designs";
 
 export function BackgroundDesignPicker() {
-  const [selected, setSelected] = useState<MorningDesignId>(() => {
-    if (typeof window === "undefined") {
-      return defaultMorningDesign.id;
-    }
+  // Always start with the default so server and first client render match exactly
+  const [selected, setSelected] = useState<MorningDesignId>(defaultMorningDesign.id);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
     const saved = window.localStorage.getItem(morningDesignStorageKey);
-    if (saved && morningDesigns.some((design) => design.id === saved)) {
-      return saved as MorningDesignId;
+    if (saved && morningDesigns.some((d) => d.id === saved)) {
+      setSelected(saved as MorningDesignId);
     }
-    return defaultMorningDesign.id;
-  });
+    setMounted(true);
+  }, []);
 
   function chooseDesign(id: MorningDesignId) {
     setSelected(id);
@@ -35,7 +36,7 @@ export function BackgroundDesignPicker() {
           <p className="text-sm font-medium text-slate-500">Choose the look for tomorrow morning.</p>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className={`grid gap-3 sm:grid-cols-3 transition-opacity duration-200 ${mounted ? "opacity-100" : "opacity-0"}`}>
         {morningDesigns.map((design) => {
           const isActive = selected === design.id;
           return (

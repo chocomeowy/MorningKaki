@@ -87,12 +87,8 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const defaultLang = senior.primary_language === "zh" ? "zh" : "en";
   const [language, setLanguage] = useState<"en" | "zh">(defaultLang);
   const [selectedMood, setSelectedMood] = useState("energetic");
-  const [design] = useState<MorningDesign>(() => {
-    if (typeof window === "undefined") {
-      return defaultMorningDesign;
-    }
-    return getMorningDesign(window.localStorage.getItem(morningDesignStorageKey));
-  });
+  // Always start with default so SSR and first client render match
+  const [design, setDesign] = useState<MorningDesign>(defaultMorningDesign);
   const [morningData, setMorningData] = useState<MorningData | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -102,9 +98,15 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
+  // Load saved design from localStorage after mount to avoid SSR mismatch
+  useEffect(() => {
+    setDesign(getMorningDesign(window.localStorage.getItem(morningDesignStorageKey)));
+  }, []);
+
   const content = copy[language];
   const imagePath = morningData?.imageUrl ?? design.heroImage ?? "/morning_illustration.png";
-  const pageUrl = typeof window === "undefined" ? "" : window.location.href;
+  const [pageUrl, setPageUrl] = useState("");
+  useEffect(() => { setPageUrl(window.location.href); }, []);
   const whatsAppShareUrl = useMemo(() => {
     const origin = pageUrl ? new URL(pageUrl).origin : "http://localhost:3000";
     const shareImageUrl = imagePath.startsWith("data:") ? pageUrl : new URL(imagePath, origin).toString();
@@ -285,7 +287,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
 
   return (
     <main className="min-h-screen bg-[#fff8ed] text-slate-950">
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col">
+      <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col">
         <header className="flex items-center justify-between px-5 pb-3 pt-4">
           <div>
             <p className="text-2xl font-extrabold tracking-tight text-amber-800">MorningKaki</p>
@@ -306,7 +308,8 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
           </div>
         </header>
 
-        <section className="px-4">
+        {/* Full-bleed image — no horizontal padding */}
+        <section className="w-full">
           <MorningCard 
             design={design} 
             content={content} 
@@ -405,7 +408,7 @@ function MorningCard({
 }) {
   if (isGenerating) {
     return (
-      <div className="flex h-[38vh] min-h-72 items-center justify-center rounded-[2rem] bg-amber-100 shadow-sm">
+      <div className="flex h-[48vw] min-h-72 max-h-[480px] items-center justify-center bg-amber-100">
         <div className="flex flex-col items-center gap-3 text-amber-700">
           <Sun className="h-8 w-8 animate-spin" />
           <p className="font-extrabold">Painting your morning...</p>
@@ -419,21 +422,21 @@ function MorningCard({
 
   if (activeImage) {
     return (
-      <div className="relative h-[38vh] min-h-72 overflow-hidden rounded-[2rem] bg-amber-200 shadow-[0_18px_60px_rgba(147,92,14,0.16)]">
+      <div className="relative w-full" style={{ aspectRatio: '3/2' }}>
         <Image
           src={activeImage}
           alt="Generated good morning card"
           fill
-          sizes="(max-width: 768px) 100vw, 400px"
+          sizes="100vw"
           priority
           className="object-cover"
         />
-        <div className="absolute inset-x-3 bottom-3 rounded-[1.5rem] bg-white/90 p-3 shadow-lg backdrop-blur">
-          <div className="flex items-center gap-2 text-lg font-extrabold text-amber-700">
+        <div className="absolute inset-x-4 bottom-4 rounded-[1.5rem] bg-white/90 p-4 shadow-lg backdrop-blur">
+          <div className="flex items-center gap-2 text-base font-extrabold text-amber-700">
             <Sun className="h-5 w-5 shrink-0" />
             <span className="line-clamp-1">{content.subcopy}</span>
           </div>
-          <p className="mt-1 max-h-32 overflow-y-auto text-lg font-bold leading-snug text-slate-900">{activeGreeting}</p>
+          <p className="mt-1 max-h-32 overflow-y-auto text-base font-bold leading-snug text-slate-900">{activeGreeting}</p>
         </div>
       </div>
     );

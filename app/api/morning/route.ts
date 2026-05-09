@@ -52,8 +52,30 @@ Make it sound like a friendly voice message. Do not include emojis, this will be
 
     const greeting = chatResponse.choices[0].message.content?.trim() || `Good morning, ${nickname}!`;
 
-    // 2. Generate the morning illustration using DALL-E 3
-    const imagePrompt = `Soft watercolour illustration, warm pastel colours, Singapore context, ${weather} morning, cosy and cheerful, no text, suitable for elderly audience. ${design.promptStyle || ''}`;
+    // 2. Determine today's rotating theme (cycles every day: blessing → gardens → calm)
+    const dayOfYear = Math.floor(
+      (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000
+    );
+    const themes = [
+      {
+        name: "blessing",
+        prompt:
+          "Singapore-style good morning blessing card. Soft pink roses in full bloom, delicate gold and pink lotus flowers, warm morning sunlight, doves flying, heart motifs, pastel pink and gold tones, cheerful and auspicious, highly saturated vibrant watercolour photography style, wide landscape format.",
+      },
+      {
+        name: "gardens",
+        prompt:
+          "Singapore good morning card featuring Gardens by the Bay supertrees at sunrise with pink and purple sky, lush tropical greenery, lotus pond reflection, warm golden light, vibrant and colourful digital painting, wide landscape format.",
+      },
+      {
+        name: "calm",
+        prompt:
+          "Serene Singapore good morning card. Calm zen garden with soft morning mist, orchids and tropical flowers, gentle bamboo, warm amber and green tones, birds perched on branches, peaceful elderly-friendly aesthetic, vibrant warm watercolour photography wide landscape format.",
+      },
+    ];
+    const theme = themes[dayOfYear % 3];
+
+    const imagePrompt = `${theme.prompt} No text overlaid. Suitable for a Singapore elderly senior audience. ${design.promptStyle || ""}`;
     
     let imageUrl = design.heroImage ?? "/morning_illustration.png";
     let imageError: string | null = null;
@@ -78,6 +100,7 @@ Make it sound like a friendly voice message. Do not include emojis, this will be
     return NextResponse.json({
       greeting,
       imageUrl,
+      theme: theme.name,
       imageSource: imageUrl.startsWith("http") || imageUrl.startsWith("data:") ? "openai" : "static-fallback",
       imageError: process.env.NODE_ENV === "production" ? undefined : imageError,
       designId: design.id,

@@ -258,22 +258,45 @@ function WizardFooter({
 
           if (step === 3 && context) {
             context.setData((prev) => ({ ...prev, isSaving: true }));
-            const token = Math.random().toString(36).substring(2, 8);
             
-            const { data } = await supabase.from("seniors").insert({
-              nickname: context.data.nickname,
-              full_name: context.data.fullName,
-              primary_language: context.data.language,
-              magic_token: token,
-            }).select("id").single();
+            // Generate a secure 36-character unguessable token if not already generated
+            const token = context.data.magicToken || crypto.randomUUID();
+            let savedId = context.data.seniorId;
+            
+            if (savedId) {
+              // Avoid duplicates: if already created, just update any changes
+              await supabase.from("seniors").update({
+                nickname: context.data.nickname,
+                full_name: context.data.fullName,
+                primary_language: context.data.language,
+                // Keep the existing token
+              }).eq("id", savedId);
+            } else {
+              // Insert new senior
+              const { data, error } = await supabase.from("seniors").insert({
+                nickname: context.data.nickname,
+                full_name: context.data.fullName,
+                primary_language: context.data.language,
+                magic_token: token,
+              }).select("id").single();
+              
+              if (data) savedId = data.id;
+            }
 
-            context.setData((prev) => ({ ...prev, magicToken: token, seniorId: data?.id, isSaving: false }));
+            context.setData((prev) => ({ ...prev, magicToken: token, seniorId: savedId, isSaving: false }));
           }
           setStep(Math.min(step + 1, setupSteps.length - 1));
         }}
-        className="h-12 rounded-2xl bg-slate-950 px-5 text-base font-bold text-white hover:bg-slate-800"
+        disabled={context?.data?.isSaving}
+        className="h-12 rounded-2xl bg-slate-950 px-5 text-base font-bold text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {isLastStep ? "Finish setup" : "Continue"}
+        {context?.data?.isSaving 
+          ? "Saving..." 
+          : isLastStep 
+            ? "Finish setup" 
+            : step === 3 
+              ? "Create magic link" 
+              : "Continue"}
         <ChevronRight className="h-5 w-5" />
       </Button>
     </footer>
