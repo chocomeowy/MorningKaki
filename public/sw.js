@@ -5,8 +5,6 @@ self.addEventListener('push', function (event) {
     url: '/'
   };
   
-  console.log("Push received:", data);
-  
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,

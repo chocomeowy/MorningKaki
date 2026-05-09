@@ -2,6 +2,23 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import webpush from "web-push";
 
+interface PushSendRequest {
+  seniorId?: string;
+  title?: string;
+  body?: string;
+  url?: string;
+}
+
+interface PushSubscriptionRow {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Failed to send push notification";
+}
+
 // Setup web-push config
 const publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
 const privateVapidKey = process.env.VAPID_PRIVATE_KEY || "";
@@ -16,7 +33,7 @@ if (publicVapidKey && privateVapidKey) {
 
 export async function POST(request: Request) {
   try {
-    const { seniorId, title, body, url } = await request.json();
+    const { seniorId, title, body, url } = (await request.json()) as PushSendRequest;
 
     if (!seniorId) {
       return NextResponse.json({ error: "Missing seniorId" }, { status: 400 });
@@ -38,7 +55,7 @@ export async function POST(request: Request) {
       url: url || `/s/demo` // In production, resolve the actual token
     });
 
-    const sendPromises = subscriptions.map((sub) => {
+    const sendPromises = (subscriptions as PushSubscriptionRow[]).map((sub) => {
       const pushSubscription = {
         endpoint: sub.endpoint,
         keys: {
@@ -52,8 +69,7 @@ export async function POST(request: Request) {
     await Promise.all(sendPromises);
 
     return NextResponse.json({ success: true, count: subscriptions.length });
-  } catch (error: any) {
-    console.error("Error sending push:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import {
   BellRing,
@@ -19,6 +19,17 @@ import {
   morningDesignStorageKey,
   type MorningDesign,
 } from "@/lib/morning-designs";
+
+interface SeniorProfile {
+  id: string;
+  nickname: string;
+  primary_language?: string | null;
+}
+
+interface MorningData {
+  greeting: string;
+  imageUrl: string;
+}
 
 const copy = {
   en: {
@@ -73,7 +84,7 @@ const copy = {
   },
 };
 
-export function SeniorClient({ senior }: { senior: any }) {
+export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const defaultLang = senior.primary_language === "zh" ? "zh" : "en";
   const [language, setLanguage] = useState<"en" | "zh">(defaultLang);
   const [selectedMood, setSelectedMood] = useState("energetic");
@@ -83,8 +94,41 @@ export function SeniorClient({ senior }: { senior: any }) {
     }
     return getMorningDesign(window.localStorage.getItem(morningDesignStorageKey));
   });
+  const [morningData, setMorningData] = useState<MorningData | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const content = copy[language];
+  const imagePath = morningData?.imageUrl ?? design.heroImage ?? "/morning_illustration.png";
+
+  function handleWhatsAppShare() {
+    const pageUrl = window.location.href;
+    const imageUrl = new URL(imagePath, window.location.origin).toString();
+    const greeting = morningData?.greeting ?? content.greeting(senior.nickname);
+    const lines =
+      language === "zh"
+        ? [
+            `${greeting}！`,
+            content.subcopy,
+            "今天的早安图准备好了：",
+            imageUrl,
+            pageUrl,
+          ]
+        : [
+            `${greeting}!`,
+            content.subcopy,
+            "Today's good morning card is ready:",
+            imageUrl,
+            pageUrl,
+          ];
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`;
+    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+  }
 
   useEffect(() => {
     async function registerPush() {
@@ -122,13 +166,102 @@ export function SeniorClient({ senior }: { senior: any }) {
             body: JSON.stringify({ seniorId: senior.id, subscription })
           });
         } catch (err) {
-          console.error("Push registration failed", err);
+          void err;
         }
       }
     }
     
     registerPush();
   }, [senior.id]);
+
+  useEffect(() => {
+    async function generateMorning() {
+      setIsGenerating(true);
+      try {
+        const res = await fetch('/api/morning', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nickname: senior.nickname,
+            language: language,
+            designId: design.id,
+            weather: 'sunny'
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMorningData(data);
+        }
+      } catch (err) {
+        void err;
+      } finally {
+        setIsGenerating(false);
+      }
+    }
+    generateMorning();
+  }, [senior.nickname, language, design.id]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await processAudio(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Microphone access denied:", err);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const processAudio = async (blob: Blob) => {
+    setIsThinking(true);
+    try {
+      const formData = new FormData();
+      formData.append("audio", blob, "recording.webm");
+      formData.append("seniorId", senior.id);
+      formData.append("nickname", senior.nickname);
+      formData.append("language", language);
+
+      const res = await fetch("/api/voice", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (res.ok) {
+        const audioBlob = await res.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.src = audioUrl;
+          audioPlayerRef.current.play();
+        }
+      } else {
+        console.error("Failed to process voice", await res.text());
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsThinking(false);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#fff8ed] text-slate-950">
@@ -137,23 +270,6 @@ export function SeniorClient({ senior }: { senior: any }) {
           <div>
             <p className="text-2xl font-extrabold tracking-tight text-amber-800">MorningKaki</p>
             <p className="text-lg font-bold text-slate-500">{content.reply}</p>
-            <button 
-              id="test-push-btn"
-              onClick={async () => {
-                await fetch('/api/push/send', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    seniorId: senior.id,
-                    title: "Test Push",
-                    body: "This is a test notification."
-                  })
-                });
-              }}
-              className="mt-2 rounded bg-amber-500 px-3 py-1 text-sm font-bold text-white"
-            >
-              Test Push
-            </button>
           </div>
           <div className="flex rounded-full border border-amber-200 bg-white p-1 shadow-sm">
             {(["en", "zh"] as const).map((item) => (
@@ -171,17 +287,37 @@ export function SeniorClient({ senior }: { senior: any }) {
         </header>
 
         <section className="px-4">
-          <MorningCard design={design} content={content} nickname={senior.nickname} />
+          <MorningCard 
+            design={design} 
+            content={content} 
+            nickname={senior.nickname} 
+            morningData={morningData}
+            isGenerating={isGenerating}
+          />
         </section>
 
         <section className="mt-4 grid grid-cols-[1fr_auto] gap-3 px-4">
-          <button className="flex min-h-24 items-center justify-center gap-4 rounded-[1.75rem] bg-slate-950 px-5 text-left text-white shadow-lg shadow-slate-950/15 active:scale-[0.98]">
+          <button 
+            onPointerDown={startRecording}
+            onPointerUp={stopRecording}
+            onPointerLeave={stopRecording}
+            className={`flex min-h-24 items-center justify-center gap-4 rounded-[1.75rem] px-5 text-left text-white shadow-lg transition-all active:scale-[0.98] select-none ${
+              isRecording ? "bg-red-500 animate-pulse ring-4 ring-red-200" :
+              isThinking ? "bg-slate-700 animate-pulse" :
+              "bg-slate-950 shadow-slate-950/15"
+            }`}
+          >
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/15">
-              <Mic className="h-8 w-8" />
+              <Mic className={`h-8 w-8 ${isRecording ? "text-white" : ""}`} />
             </span>
-            <span className="text-2xl font-extrabold">{content.listen}</span>
+            <span className="text-2xl font-extrabold">
+              {isRecording ? "Listening..." : isThinking ? "Thinking..." : content.listen}
+            </span>
           </button>
-          <button className="flex min-h-24 w-24 flex-col items-center justify-center rounded-[1.75rem] bg-[#25D366] text-white shadow-lg shadow-green-500/20">
+          <button
+            onClick={handleWhatsAppShare}
+            className="flex min-h-24 w-24 flex-col items-center justify-center rounded-[1.75rem] bg-[#25D366] text-white shadow-lg shadow-green-500/20 active:scale-[0.98]"
+          >
             <Share2 className="h-8 w-8" />
             <span className="mt-1 text-lg font-bold leading-tight">{content.share}</span>
           </button>
@@ -237,6 +373,8 @@ export function SeniorClient({ senior }: { senior: any }) {
             </button>
           ))}
         </section>
+
+        <audio ref={audioPlayerRef} className="hidden" />
       </div>
     </main>
   );
@@ -246,16 +384,34 @@ function MorningCard({
   design,
   content,
   nickname,
+  morningData,
+  isGenerating,
 }: {
   design: MorningDesign;
   content: (typeof copy)["en"];
   nickname: string;
+  morningData: MorningData | null;
+  isGenerating: boolean;
 }) {
-  if (design.heroImage) {
+  if (isGenerating) {
+    return (
+      <div className="flex h-[38vh] min-h-72 items-center justify-center rounded-[2rem] bg-amber-100 shadow-sm">
+        <div className="flex flex-col items-center gap-3 text-amber-700">
+          <Sun className="h-8 w-8 animate-spin" />
+          <p className="font-extrabold">Painting your morning...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const activeImage = morningData?.imageUrl || design.heroImage;
+  const activeGreeting = morningData?.greeting || content.greeting(nickname);
+
+  if (activeImage) {
     return (
       <div className="relative h-[38vh] min-h-72 overflow-hidden rounded-[2rem] bg-amber-200 shadow-[0_18px_60px_rgba(147,92,14,0.16)]">
         <Image
-          src={design.heroImage}
+          src={activeImage}
           alt="Generated good morning card"
           fill
           sizes="(max-width: 768px) 100vw, 400px"
@@ -267,7 +423,7 @@ function MorningCard({
             <Sun className="h-5 w-5" />
             {content.subcopy}
           </div>
-          <p className="mt-1 text-2xl font-black leading-tight text-slate-950">{content.greeting(nickname)}</p>
+          <p className="mt-1 text-2xl font-black leading-tight text-slate-950">{activeGreeting}</p>
         </div>
       </div>
     );

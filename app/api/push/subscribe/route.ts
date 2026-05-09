@@ -17,13 +17,12 @@ export async function POST(request: Request) {
     }, { onConflict: 'endpoint' });
 
     if (error) {
-      console.error("Supabase insert error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Subscription error:", error);
+    void error;
     return NextResponse.json({ error: "Failed to save subscription" }, { status: 500 });
   }
 }
