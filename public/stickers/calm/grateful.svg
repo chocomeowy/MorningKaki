@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="calm grateful mood sticker">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="25%" r="78%"><stop offset="0" stop-color="#e0f2fe"/><stop offset="0.55" stop-color="#bae6fd"/><stop offset="1" stop-color="#c4b5fd"/></radialGradient>
+    <filter id="soft"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#7c2d12" flood-opacity=".16"/></filter>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="url(#bg)"/>
+  <path d="M24 174c32-18 58-18 90 0s58 18 90 0s46-16 68-3" fill="none" stroke="#0284c7" stroke-width="9" stroke-linecap="round" opacity=".55"/><path d="M36 196c30-14 55-14 85 0s55 14 85 0s40-12 60-2" fill="none" stroke="#7dd3fc" stroke-width="7" stroke-linecap="round"/><circle cx="204" cy="60" r="22" fill="#fef3c7" opacity=".9"/>
+  <circle cx="124" cy="118" r="70" fill="#fffaf0" opacity=".92" filter="url(#soft)"/>
+  <circle cx="124" cy="118" r="56" fill="#fb7185" opacity=".18"/>
+  <path d="M88 92c8-14 22-4 12 8c-10-12 4-22 12-8" stroke="#075985" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <path d="M132 92c8-14 22-4 12 8c-10-12 4-22 12-8" stroke="#075985" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <path d="M92 116c16 18 40 18 56 0" stroke="#075985" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <circle cx="80" cy="110" r="11" fill="#e11d48" opacity=".18"/>
+  <circle cx="168" cy="110" r="11" fill="#e11d48" opacity=".18"/>
+  <path d="M204 78c17-29 59-7 47 27c-8 24-34 40-47 54c-14-14-39-30-48-54c-12-34 30-56 48-27Z" fill="#e11d48" opacity=".9"/>
+</svg>

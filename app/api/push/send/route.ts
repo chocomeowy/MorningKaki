@@ -39,20 +39,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing seniorId" }, { status: 400 });
     }
 
-    // Get the senior's push subscriptions from Supabase
-    const { data: subscriptions, error } = await supabase
-      .from('push_subscriptions')
-      .select('*')
-      .eq('senior_id', seniorId);
+    // Get the senior's magic token and subscriptions from Supabase
+    const [{ data: senior }, { data: subscriptions, error }] = await Promise.all([
+      supabase.from('seniors').select('magic_token').eq('id', seniorId).single(),
+      supabase.from('push_subscriptions').select('*').eq('senior_id', seniorId)
+    ]);
 
     if (error || !subscriptions || subscriptions.length === 0) {
       return NextResponse.json({ error: "No active push subscriptions found" }, { status: 404 });
     }
 
+    const seniorUrl = senior?.magic_token ? `/s/${senior.magic_token}` : "/s/demo";
+
     const payload = JSON.stringify({
       title: title || "🌅 Good morning!",
       body: body || "Your morning is ready.",
-      url: url || `/s/demo` // In production, resolve the actual token
+      url: url || seniorUrl
     });
 
     const sendPromises = (subscriptions as PushSubscriptionRow[]).map((sub) => {

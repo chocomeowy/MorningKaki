@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="gardens down mood sticker">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="25%" r="78%"><stop offset="0" stop-color="#ecfccb"/><stop offset="0.55" stop-color="#a7f3d0"/><stop offset="1" stop-color="#93c5fd"/></radialGradient>
+    <filter id="soft"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#7c2d12" flood-opacity=".16"/></filter>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="url(#bg)"/>
+  <path d="M48 156V70M35 78c13-20 33-20 46 0M31 98c18-14 38-14 56 0M198 160V66M180 76c18-22 40-22 58 0M174 100c24-16 48-16 72 0" stroke="#166534" stroke-width="7" stroke-linecap="round" fill="none" opacity=".75"/><circle cx="48" cy="68" r="10" fill="#22c55e"/><circle cx="198" cy="64" r="11" fill="#10b981"/>
+  <circle cx="124" cy="118" r="70" fill="#fffaf0" opacity=".92" filter="url(#soft)"/>
+  <circle cx="124" cy="118" r="56" fill="#60a5fa" opacity=".18"/>
+  <path d="M92 94q8 7 16 0" stroke="#166534" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <path d="M136 94q8 7 16 0" stroke="#166534" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <path d="M94 132q26-16 52 0" stroke="#166534" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <circle cx="80" cy="110" r="11" fill="#2563eb" opacity=".18"/>
+  <circle cx="168" cy="110" r="11" fill="#2563eb" opacity=".18"/>
+  <path d="M200 54c24 4 38 18 42 38c16 2 26 14 26 30c0 19-15 31-35 31h-72c-19 0-34-12-34-30c0-17 13-29 30-31c6-24 21-37 43-38Z" fill="#dbeafe" stroke="#2563eb" stroke-width="5"/><path d="M170 170l-9 22M204 170l-9 22M238 170l-9 22" stroke="#2563eb" stroke-width="7" stroke-linecap="round"/>
+</svg>

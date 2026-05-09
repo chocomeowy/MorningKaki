@@ -56,17 +56,43 @@ export function DashboardView({ id }: { id: string }) {
   }, []);
 
   useEffect(() => {
-    if (id && id !== 'demo') {
-      supabase.from("seniors").select("*").eq("id", id).single().then(({ data }) => setSenior(data));
-    } else {
-      setSenior({
-        nickname: "Ah Gong",
-        full_name: "Lim Chee Seng",
-        magic_token: "demo",
-        primary_language: "en",
-        morning_time: "07:30",
-      });
+    async function loadSenior() {
+      if (id && id !== 'demo' && id !== '[id]') {
+        try {
+          const { data, error } = await supabase
+            .from("seniors")
+            .select("*")
+            .eq("id", id)
+            .single();
+            
+          if (error) {
+            console.error("Supabase error:", error);
+            // Fallback to demo if record not found or RLS blocks it
+            setSenior({
+              nickname: "Ah Gong (Demo)",
+              full_name: "Lim Chee Seng",
+              magic_token: "demo",
+              primary_language: "en",
+              morning_time: "07:30",
+              error: error.message
+            });
+          } else {
+            setSenior(data);
+          }
+        } catch (err) {
+          console.error("Failed to fetch senior:", err);
+        }
+      } else {
+        setSenior({
+          nickname: "Ah Gong",
+          full_name: "Lim Chee Seng",
+          magic_token: "demo",
+          primary_language: "en",
+          morning_time: "07:30",
+        });
+      }
     }
+    loadSenior();
   }, [id]);
 
   if (!senior) {

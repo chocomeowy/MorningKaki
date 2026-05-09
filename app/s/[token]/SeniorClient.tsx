@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import {
   BellRing,
@@ -18,6 +18,7 @@ import {
   morningDesignStorageKey,
   type MorningDesign,
 } from "@/lib/morning-designs";
+import { getMoodStickerSrc, type MoodStickerId } from "@/lib/mood-stickers";
 
 interface SeniorProfile {
   id: string;
@@ -30,6 +31,33 @@ interface MorningData {
   imageUrl: string;
 }
 
+interface MoodChoice {
+  id: MoodStickerId;
+  label: string;
+}
+
+interface LocalizedCopy {
+  greeting: (name: string) => string;
+  subcopy: string;
+  listen: string;
+  today: string;
+  news: string;
+  share: string;
+  moodPrompt: string;
+  moodSaved: string;
+  moodSaving: string;
+  moodSaveError: string;
+  reply: string;
+  stickers: MoodChoice[];
+  reminders: {
+    time: string;
+    title: string;
+    icon: typeof Pill;
+    status: string;
+  }[];
+  newsItems: string[];
+}
+
 const copy = {
   en: {
     greeting: (name: string) => `Good morning, ${name}`,
@@ -39,13 +67,16 @@ const copy = {
     news: "Local news",
     share: "Share morning",
     moodPrompt: "How are you feeling?",
+    moodSaved: "Thank you. I saved it.",
+    moodSaving: "Saving...",
+    moodSaveError: "I could not save that. Please tap again.",
     reply: "Morning is ready. I will read it aloud.",
     stickers: [
-      { id: "energetic", emoji: "😊", label: "Energetic" },
-      { id: "tired", emoji: "😴", label: "Tired" },
-      { id: "down", emoji: "🌧️", label: "Down" },
-      { id: "grateful", emoji: "❤️", label: "Grateful" },
-      { id: "confused", emoji: "😕", label: "Confused" },
+      { id: "energetic", label: "Energetic" },
+      { id: "tired", label: "Tired" },
+      { id: "down", label: "Down" },
+      { id: "grateful", label: "Grateful" },
+      { id: "confused", label: "Confused" },
     ],
     reminders: [
       { time: "08:00", title: "Blood pressure medicine", icon: Pill, status: "Ready" },
@@ -64,13 +95,16 @@ const copy = {
     news: "本地新闻",
     share: "分享早安",
     moodPrompt: "今天感觉怎样？",
+    moodSaved: "谢谢，已经记录了。",
+    moodSaving: "记录中...",
+    moodSaveError: "还没记录到，请再按一次。",
     reply: "早晨内容准备好了，我会读给你听。",
     stickers: [
-      { id: "energetic", emoji: "😊", label: "精神好" },
-      { id: "tired", emoji: "😴", label: "很累" },
-      { id: "down", emoji: "🌧️", label: "心情差" },
-      { id: "grateful", emoji: "❤️", label: "感恩" },
-      { id: "confused", emoji: "😕", label: "不明白" },
+      { id: "energetic", label: "精神好" },
+      { id: "tired", label: "很累" },
+      { id: "down", label: "心情差" },
+      { id: "grateful", label: "感恩" },
+      { id: "confused", label: "不明白" },
     ],
     reminders: [
       { time: "08:00", title: "吃高血压药", icon: Pill, status: "准备好" },
@@ -81,32 +115,38 @@ const copy = {
       "大巴窑地铁站附近新的有盖走道本周开放。",
     ],
   },
+} satisfies Record<"en" | "zh", LocalizedCopy>;
+
+const getMoodStorageKey = (seniorId: string) => {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  return `morningkaki:mood:${seniorId}:${today}`;
 };
 
 export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const defaultLang = senior.primary_language === "zh" ? "zh" : "en";
   const [language, setLanguage] = useState<"en" | "zh">(defaultLang);
-  const [selectedMood, setSelectedMood] = useState("energetic");
-  // Always start with default so SSR and first client render match
-  const [design, setDesign] = useState<MorningDesign>(defaultMorningDesign);
+  const [selectedMood, setSelectedMood] = useState<MoodStickerId | null>(null);
+  const selectedDesignId = useSyncExternalStore(
+    subscribeToMorningDesign,
+    getStoredMorningDesign,
+    getDefaultMorningDesign,
+  );
+  const design = getMorningDesign(selectedDesignId);
   const [morningData, setMorningData] = useState<MorningData | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [showMoodModal, setShowMoodModal] = useState(false);
+  const [isSavingMood, setIsSavingMood] = useState(false);
+  const [moodSaveError, setMoodSaveError] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
-  // Load saved design from localStorage after mount to avoid SSR mismatch
-  useEffect(() => {
-    setDesign(getMorningDesign(window.localStorage.getItem(morningDesignStorageKey)));
-  }, []);
-
   const content = copy[language];
   const imagePath = morningData?.imageUrl ?? design.heroImage ?? "/morning_illustration.png";
-  const [pageUrl, setPageUrl] = useState("");
-  useEffect(() => { setPageUrl(window.location.href); }, []);
+  const pageUrl = typeof window === "undefined" ? "" : window.location.href;
   const whatsAppShareUrl = useMemo(() => {
     const origin = pageUrl ? new URL(pageUrl).origin : "http://localhost:3000";
     const shareImageUrl = imagePath.startsWith("data:") ? pageUrl : new URL(imagePath, origin).toString();
@@ -129,6 +169,15 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
           ];
     return `https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`;
   }, [content, imagePath, language, morningData?.greeting, pageUrl, senior.nickname]);
+
+  const handleMorningImageReady = useCallback(() => {
+    const savedMood = window.localStorage.getItem(getMoodStorageKey(senior.id)) as MoodStickerId | null;
+    if (savedMood && validClientMoodIds.has(savedMood)) {
+      setSelectedMood(savedMood);
+      return;
+    }
+    setShowMoodModal(true);
+  }, [senior.id]);
 
   useEffect(() => {
     async function registerPush() {
@@ -316,6 +365,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
             nickname={senior.nickname} 
             morningData={morningData}
             isGenerating={isGenerating}
+            onImageReady={handleMorningImageReady}
           />
         </section>
 
@@ -354,16 +404,25 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
             {content.stickers.map((sticker) => (
               <button
                 key={sticker.id}
-                onClick={() => setSelectedMood(sticker.id)}
+                onClick={() => saveMood(sticker.id)}
+                aria-label={sticker.label}
                 className={`min-h-24 rounded-[1.35rem] border bg-white p-2 text-center shadow-sm ${
                   selectedMood === sticker.id ? "border-amber-400 ring-4 ring-amber-100" : "border-amber-100"
                 }`}
               >
-                <span className="block text-4xl">{sticker.emoji}</span>
-                <span className="mt-1 block text-lg font-extrabold leading-tight text-slate-600">{sticker.label}</span>
+                <Image
+                  src={getMoodStickerSrc(design.id, sticker.id as MoodStickerId)}
+                  alt={sticker.label}
+                  width={56}
+                  height={56}
+                  className="mx-auto h-14 w-14"
+                />
               </button>
             ))}
           </div>
+          {selectedMood ? (
+            <p className="mt-3 text-base font-bold text-emerald-700">{content.moodSaved}</p>
+          ) : null}
         </section>
 
         <section className="mt-5 space-y-3 px-4">
@@ -389,8 +448,42 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
 
         <audio ref={audioPlayerRef} className="hidden" />
       </div>
+      {showMoodModal ? (
+        <MoodModal
+          content={content}
+          design={design}
+          selectedMood={selectedMood}
+          isSaving={isSavingMood}
+          hasError={moodSaveError}
+          onSelect={saveMood}
+        />
+      ) : null}
     </main>
   );
+
+  async function saveMood(moodId: MoodStickerId) {
+    setSelectedMood(moodId);
+    setIsSavingMood(true);
+    setMoodSaveError(false);
+    try {
+      const response = await fetch("/api/mood", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seniorId: senior.id, stickerType: moodId }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Mood save failed");
+      }
+
+      window.localStorage.setItem(getMoodStorageKey(senior.id), moodId);
+      setShowMoodModal(false);
+    } catch {
+      setMoodSaveError(true);
+    } finally {
+      setIsSavingMood(false);
+    }
+  }
 }
 
 function MorningCard({
@@ -399,12 +492,14 @@ function MorningCard({
   nickname,
   morningData,
   isGenerating,
+  onImageReady,
 }: {
   design: MorningDesign;
   content: (typeof copy)["en"];
   nickname: string;
   morningData: MorningData | null;
   isGenerating: boolean;
+  onImageReady: () => void;
 }) {
   if (isGenerating) {
     return (
@@ -430,6 +525,7 @@ function MorningCard({
           sizes="100vw"
           priority
           className="object-cover"
+          onLoad={onImageReady}
         />
         <div className="absolute inset-x-4 bottom-4 rounded-[1.5rem] bg-white/90 p-4 shadow-lg backdrop-blur">
           <div className="flex items-center gap-2 text-base font-extrabold text-amber-700">
@@ -456,9 +552,69 @@ function MorningCard({
         <ImageIcon className="h-5 w-5 text-amber-700" />
         {design.shortName}
       </div>
+      <div className="sr-only">
+        <Image src="/morning_illustration.png" alt="" width={1} height={1} onLoad={onImageReady} />
+      </div>
     </div>
   );
 }
+
+function MoodModal({
+  content,
+  design,
+  selectedMood,
+  isSaving,
+  hasError,
+  onSelect,
+}: {
+  content: (typeof copy)["en"];
+  design: MorningDesign;
+  selectedMood: MoodStickerId | null;
+  isSaving: boolean;
+  hasError: boolean;
+  onSelect: (moodId: MoodStickerId) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-4 pb-4 backdrop-blur-sm sm:items-center sm:pb-0">
+      <section className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl">
+        <h2 className="text-center text-2xl font-black text-slate-950">{content.moodPrompt}</h2>
+        <div className="mt-5 grid grid-cols-5 gap-2">
+          {content.stickers.map((sticker) => (
+            <button
+              key={sticker.id}
+              type="button"
+              aria-label={sticker.label}
+              disabled={isSaving}
+              onClick={() => onSelect(sticker.id)}
+              className={`flex aspect-square min-h-16 items-center justify-center rounded-2xl border bg-amber-50 p-1.5 transition active:scale-95 disabled:opacity-60 ${
+                selectedMood === sticker.id ? "border-amber-400 ring-4 ring-amber-100" : "border-amber-100"
+              }`}
+            >
+              <Image
+                src={getMoodStickerSrc(design.id, sticker.id)}
+                alt={sticker.label}
+                width={72}
+                height={72}
+                className="h-full w-full object-contain"
+              />
+            </button>
+          ))}
+        </div>
+        <p className={`mt-4 min-h-6 text-center text-base font-bold ${hasError ? "text-red-600" : "text-emerald-700"}`}>
+          {hasError ? content.moodSaveError : isSaving ? content.moodSaving : ""}
+        </p>
+      </section>
+    </div>
+  );
+}
+
+const validClientMoodIds = new Set<string>([
+  "energetic",
+  "tired",
+  "down",
+  "grateful",
+  "confused",
+]);
 
 function SectionTitle({ title, icon: Icon }: { title: string; icon: typeof Check }) {
   return (
@@ -467,4 +623,17 @@ function SectionTitle({ title, icon: Icon }: { title: string; icon: typeof Check
       <h2 className="text-xl font-extrabold">{title}</h2>
     </div>
   );
+}
+
+function subscribeToMorningDesign(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  return () => window.removeEventListener("storage", onStoreChange);
+}
+
+function getStoredMorningDesign() {
+  return window.localStorage.getItem(morningDesignStorageKey);
+}
+
+function getDefaultMorningDesign() {
+  return defaultMorningDesign.id;
 }

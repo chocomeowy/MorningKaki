@@ -96,13 +96,13 @@ export async function POST(request: Request) {
     }
 
     // 4. Save the log to Supabase
-    if (seniorId && confirmWrite) {
+    if (seniorId) {
       await supabase.from("voice_logs").insert({
         senior_id: seniorId,
         transcript: transcript,
         sentiment_label: sentimentLabel,
         sentiment_score: sentimentScore,
-        // Skipping audio_url upload for hackathon speed unless Storage bucket is configured
+        timestamp: new Date().toISOString(),
       });
     }
 

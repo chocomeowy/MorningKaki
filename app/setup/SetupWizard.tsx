@@ -259,28 +259,59 @@ function WizardFooter({
           if (step === 3 && context) {
             context.setData((prev) => ({ ...prev, isSaving: true }));
             
-            // Generate a secure 36-character unguessable token if not already generated
             const token = context.data.magicToken || crypto.randomUUID();
             let savedId = context.data.seniorId;
             
             if (savedId) {
-              // Avoid duplicates: if already created, just update any changes
               await supabase.from("seniors").update({
                 nickname: context.data.nickname,
                 full_name: context.data.fullName,
                 primary_language: context.data.language,
-                // Keep the existing token
+                morning_time: context.data.timings.morning,
+                quiet_start: context.data.timings.quietStart,
+                quiet_end: context.data.timings.quietEnd,
               }).eq("id", savedId);
             } else {
-              // Insert new senior
               const { data, error } = await supabase.from("seniors").insert({
                 nickname: context.data.nickname,
                 full_name: context.data.fullName,
                 primary_language: context.data.language,
                 magic_token: token,
+                morning_time: context.data.timings.morning,
+                quiet_start: context.data.timings.quietStart,
+                quiet_end: context.data.timings.quietEnd,
               }).select("id").single();
               
-              if (data) savedId = data.id;
+              if (!error && data) savedId = data.id;
+            }
+
+            // Save medications (replace all for this senior)
+            if (savedId && context.data.medications.length > 0) {
+              await supabase.from("medications").delete().eq("senior_id", savedId);
+              await supabase.from("medications").insert(
+                context.data.medications.map((med) => ({
+                  senior_id: savedId,
+                  name: med.name,
+                  dosage: "",
+                  schedule_times: [context.data.timings.med],
+                }))
+              );
+            }
+
+            // Save reminders (replace all for this senior)
+            if (savedId && context.data.reminders.length > 0) {
+              await supabase.from("reminders").delete().eq("senior_id", savedId);
+              await supabase.from("reminders").insert(
+                context.data.reminders.map((rem) => {
+                  const today = new Date().toISOString().split("T")[0];
+                  return {
+                    senior_id: savedId,
+                    text: rem.name,
+                    remind_at: `${today}T${rem.time}:00+08:00`,
+                    recurring: false,
+                  };
+                })
+              );
             }
 
             context.setData((prev) => ({ ...prev, magicToken: token, seniorId: savedId, isSaving: false }));
