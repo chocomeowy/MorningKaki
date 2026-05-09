@@ -258,30 +258,24 @@ function getLanguageInstruction(language: MorningRequest["language"]) {
 }
 
 async function createMorningScript(messages: MorningMessage[]) {
-  const input = messages.map((message) => `${message.role.toUpperCase()}:\n${message.content}`).join("\n\n");
-
   try {
-    const response = await openai.responses.create({
-      model: "gpt-5-mini",
-      input,
-      max_output_tokens: 8000,
-      reasoning: { effort: "minimal" },
-      text: { verbosity: "high" },
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages,
+      max_tokens: 1000,
     });
 
-    return response.output_text?.trim();
+    return response.choices[0]?.message?.content?.trim();
   } catch (error) {
     const errorMessage = getErrorMessage(error);
     if (errorMessage.includes("does not have access") || errorMessage.includes("model_not_found")) {
-      const response = await openai.responses.create({
-        model: "gpt-5-nano",
-        input,
-        max_output_tokens: 8000,
-        reasoning: { effort: "minimal" },
-        text: { verbosity: "high" },
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages,
+        max_tokens: 1000,
       });
 
-      return response.output_text?.trim();
+      return response.choices[0]?.message?.content?.trim();
     }
 
     throw error;
