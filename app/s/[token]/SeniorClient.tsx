@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   BellRing,
@@ -11,7 +11,6 @@ import {
   Pill,
   Share2,
   Sun,
-  Volume2,
 } from "lucide-react";
 import {
   defaultMorningDesign,
@@ -105,10 +104,10 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
 
   const content = copy[language];
   const imagePath = morningData?.imageUrl ?? design.heroImage ?? "/morning_illustration.png";
-
-  function handleWhatsAppShare() {
-    const pageUrl = window.location.href;
-    const imageUrl = new URL(imagePath, window.location.origin).toString();
+  const pageUrl = typeof window === "undefined" ? "" : window.location.href;
+  const whatsAppShareUrl = useMemo(() => {
+    const origin = pageUrl ? new URL(pageUrl).origin : "http://localhost:3000";
+    const shareImageUrl = imagePath.startsWith("data:") ? pageUrl : new URL(imagePath, origin).toString();
     const greeting = morningData?.greeting ?? content.greeting(senior.nickname);
     const lines =
       language === "zh"
@@ -116,19 +115,18 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
             `${greeting}！`,
             content.subcopy,
             "今天的早安图准备好了：",
-            imageUrl,
+            shareImageUrl,
             pageUrl,
           ]
         : [
             `${greeting}!`,
             content.subcopy,
             "Today's good morning card is ready:",
-            imageUrl,
+            shareImageUrl,
             pageUrl,
           ];
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`;
-    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-  }
+    return `https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`;
+  }, [content, imagePath, language, morningData?.greeting, pageUrl, senior.nickname]);
 
   useEffect(() => {
     async function registerPush() {
@@ -201,6 +199,30 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
     generateMorning();
   }, [senior.nickname, language, design.id]);
 
+  useEffect(() => {
+    const greeting = morningData?.greeting;
+    if (greeting && !isGenerating) {
+      async function playGreeting() {
+        try {
+          const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: greeting })
+          });
+          if (res.ok) {
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            await audio.play().catch(() => undefined);
+          }
+        } catch (err) {
+          void err;
+        }
+      }
+      playGreeting();
+    }
+  }, [morningData?.greeting, isGenerating]);
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -221,7 +243,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
       mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
-      console.error("Microphone access denied:", err);
+      void err;
     }
   };
 
@@ -253,11 +275,9 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
           audioPlayerRef.current.src = audioUrl;
           audioPlayerRef.current.play();
         }
-      } else {
-        console.error("Failed to process voice", await res.text());
       }
     } catch (err) {
-      console.error(err);
+      void err;
     } finally {
       setIsThinking(false);
     }
@@ -314,13 +334,15 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
               {isRecording ? "Listening..." : isThinking ? "Thinking..." : content.listen}
             </span>
           </button>
-          <button
-            onClick={handleWhatsAppShare}
+          <a
+            href={whatsAppShareUrl}
+            target="_blank"
+            rel="noreferrer"
             className="flex min-h-24 w-24 flex-col items-center justify-center rounded-[1.75rem] bg-[#25D366] text-white shadow-lg shadow-green-500/20 active:scale-[0.98]"
           >
             <Share2 className="h-8 w-8" />
             <span className="mt-1 text-lg font-bold leading-tight">{content.share}</span>
-          </button>
+          </a>
         </section>
 
         <section className="mt-5 px-4">
@@ -360,18 +382,6 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
               </div>
             );
           })}
-        </section>
-
-        <section className="mt-5 space-y-3 px-4 pb-8">
-          <SectionTitle title={content.news} icon={Volume2} />
-          {content.newsItems.map((item) => (
-            <button key={item} className="flex w-full items-center gap-4 rounded-[1.5rem] bg-white p-4 text-left shadow-sm ring-1 ring-amber-100">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-800">
-                <Volume2 className="h-6 w-6" />
-              </span>
-              <span className="text-lg font-bold leading-snug">{item}</span>
-            </button>
-          ))}
         </section>
 
         <audio ref={audioPlayerRef} className="hidden" />
@@ -420,10 +430,10 @@ function MorningCard({
         />
         <div className="absolute inset-x-3 bottom-3 rounded-[1.5rem] bg-white/90 p-3 shadow-lg backdrop-blur">
           <div className="flex items-center gap-2 text-lg font-extrabold text-amber-700">
-            <Sun className="h-5 w-5" />
-            {content.subcopy}
+            <Sun className="h-5 w-5 shrink-0" />
+            <span className="line-clamp-1">{content.subcopy}</span>
           </div>
-          <p className="mt-1 text-2xl font-black leading-tight text-slate-950">{activeGreeting}</p>
+          <p className="mt-1 max-h-32 overflow-y-auto text-lg font-bold leading-snug text-slate-900">{activeGreeting}</p>
         </div>
       </div>
     );

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { Dispatch, SetStateAction } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Bell,
@@ -15,10 +16,10 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { setupMagicLink } from "../setup-data";
 import { BackgroundDesignPicker } from "./BackgroundDesignPicker";
+import { useWizard } from "../SetupWizard";
+import type { MedicationDraft, ReminderDraft, WizardData } from "../SetupWizard";
 import {
-  ActionTile,
   Choice,
   ComingSoon,
   Field,
@@ -31,33 +32,53 @@ import {
 } from "./StepPrimitives";
 
 export function StepContent({ step }: { step: number }) {
-  if (step === 0) return <ProfileStep />;
-  if (step === 1) return <MedicationStep />;
-  if (step === 2) return <ReminderStep />;
+  const context = useWizard();
+  if (!context) return null;
+  
+  if (step === 0) return <ProfileStep data={context.data} setData={context.setData} />;
+  if (step === 1) return <MedicationStep data={context.data} setData={context.setData} />;
+  if (step === 2) return <ReminderStep data={context.data} setData={context.setData} />;
   if (step === 3) return <TimingStep />;
-  return <ShareStep />;
+  return <ShareStep data={context.data} />;
 }
 
-function ProfileStep() {
+interface DataStepProps {
+  data: WizardData;
+  setData: Dispatch<SetStateAction<WizardData>>;
+}
+
+function ProfileStep({ data, setData }: DataStepProps) {
+  const languages = [
+    { label: "English", id: "en" },
+    { label: "Mandarin", id: "zh" },
+    { label: "Hokkien", id: "hokkien" },
+    { label: "Malay", id: "ms" }
+  ];
+
   return (
     <StepShell
       eyebrow="Step 1"
-      title="Start with the person, not the paperwork."
-      description="Keep the first screen light: enough detail to make the senior view feel personal immediately."
+      title="Start with the person."
+      description=""
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Full name" value="Lim Chee Seng" />
-        <Field label="Preferred nickname" value="Ah Gong" />
+        <Field label="Full name" value={data.fullName} onChange={(e) => setData((p) => ({ ...p, fullName: e.target.value }))} />
+        <Field label="Preferred nickname" value={data.nickname} onChange={(e) => setData((p) => ({ ...p, nickname: e.target.value }))} />
       </div>
       <div className="grid gap-4 sm:grid-cols-[1fr_1.25fr]">
         <UploadTile />
         <div>
           <Label>Primary language</Label>
           <div className="grid grid-cols-2 gap-2">
-            {["English", "Mandarin", "Hokkien", "Malay"].map((item, index) => (
-              <Choice key={item} active={index === 0} icon={Languages}>
-                {item}
-              </Choice>
+            {languages.map((item) => (
+              <button 
+                key={item.id}
+                onClick={() => setData((p) => ({ ...p, language: item.id }))}
+                className={`flex min-h-12 items-center gap-2 rounded-2xl border px-3 text-left font-bold ${data.language === item.id ? "border-amber-300 bg-amber-100 text-amber-950" : "border-slate-200 bg-white text-slate-600"}`}
+              >
+                <Languages className="h-4 w-4" />
+                {item.label}
+              </button>
             ))}
           </div>
         </div>
@@ -68,46 +89,78 @@ function ProfileStep() {
   );
 }
 
-function MedicationStep() {
+function MedicationStep({ data, setData }: DataStepProps) {
+  const handleScan = () => {
+    // Hackathon mockup of scanning a medicine
+    setTimeout(() => {
+      setData((p) => ({
+        ...p,
+        medications: [...p.medications, { id: Math.random().toString(), name: "Lisinopril 10mg", timing: "Evening after dinner" }]
+      }));
+    }, 500);
+  };
+
   return (
     <StepShell
       eyebrow="Step 2"
       title="Scan first, confirm after."
       description="The AI scan feels useful, but the caregiver stays in control before anything becomes a reminder."
     >
-      <ActionTile
-        icon={ScanLine}
-        title="Scan medication label"
-        body="Open camera, extract name and dosage, then review."
-        action="Scan label"
-      />
-      <ReviewCard title="Amlodipine 5mg" meta="Morning after breakfast" accent="blue" />
+      <button onClick={handleScan} className="flex flex-col rounded-3xl border border-amber-100 bg-amber-50 p-5 text-left transition hover:bg-amber-100/50">
+        <ScanLine className="h-7 w-7 text-amber-700" />
+        <h4 className="mt-3 text-xl font-extrabold text-amber-950">Scan medication label</h4>
+        <p className="mt-1 text-slate-600">Open camera, extract name and dosage, then review.</p>
+        <span className="mt-4 flex h-12 w-fit items-center justify-center rounded-2xl bg-amber-500 px-5 font-bold text-white hover:bg-amber-600">
+          Scan label
+        </span>
+      </button>
+
+      {data.medications.map((med: MedicationDraft) => (
+        <ReviewCard key={med.id} title={med.name} meta={med.timing} accent="blue" />
+      ))}
+      
       <Button variant="outline" className="h-14 w-full rounded-2xl border-dashed text-base font-bold">
         <Plus className="h-5 w-5" />
-        Add another medication
+        Add another medication manually
       </Button>
     </StepShell>
   );
 }
 
-function ReminderStep() {
+function ReminderStep({ data, setData }: DataStepProps) {
   return (
     <StepShell
       eyebrow="Step 3"
       title="Make the day feel familiar."
       description="Appointments and custom reminders are written in everyday language so they sound natural when spoken aloud."
     >
-      <ReviewCard
-        title="Polyclinic checkup"
-        meta="Tomorrow, 2:00 PM at Toa Payoh Polyclinic"
-        accent="purple"
-      />
-      <ActionTile
-        icon={CalendarDays}
-        title="Custom reminder"
-        body="Add anything from tai chi class to calling the grandchildren."
-        action="Add reminder"
-      />
+      {data.reminders.map((rem: ReminderDraft) => (
+        <ReviewCard
+          key={rem.id}
+          title={rem.name}
+          meta={`${rem.time} at ${rem.location}`}
+          accent="purple"
+        />
+      ))}
+
+      <button onClick={() => {
+        const name = window.prompt("Reminder title (e.g. Call Grandkids)");
+        if (name) {
+          const time = window.prompt("Time (e.g. 15:00)") || "12:00";
+          setData((p) => ({
+            ...p,
+            reminders: [...p.reminders, { id: Math.random().toString(), name, time, location: "Home" }]
+          }));
+        }
+      }} className="flex flex-col rounded-3xl border border-amber-100 bg-amber-50 p-5 text-left transition hover:bg-amber-100/50">
+        <CalendarDays className="h-7 w-7 text-amber-700" />
+        <h4 className="mt-3 text-xl font-extrabold text-amber-950">Custom reminder</h4>
+        <p className="mt-1 text-slate-600">Add anything from tai chi class to calling the grandchildren.</p>
+        <span className="mt-4 flex h-12 w-fit items-center justify-center rounded-2xl bg-amber-500 px-5 font-bold text-white hover:bg-amber-600">
+          Add reminder
+        </span>
+      </button>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <ComingSoon title="HealthBuddy link" />
         <ComingSoon title="Forward clinic SMS" />
@@ -145,31 +198,46 @@ function TimingStep() {
   );
 }
 
-function ShareStep() {
+function ShareStep({ data }: { data: WizardData }) {
+  // If the component mounts but magicToken isn't set yet (because DB insertion is async), 
+  // it might flash empty. We'll use the origin URL if available.
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://morningkaki.vercel.app";
+  const finalLink = data?.magicToken ? `${baseUrl}/s/${data.magicToken}` : `${baseUrl}/s/...`;
+
   return (
     <StepShell
       eyebrow="Step 5"
       title="Send one gentle link."
       description="The senior opens the magic link once, adds it to the home screen, and comes back every morning."
     >
-      <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
-        <div className="rounded-3xl border border-amber-100 bg-amber-50 p-5 text-center">
-          <QRCodeSVG value={setupMagicLink} size={132} className="mx-auto rounded-2xl bg-white p-2" />
-          <p className="mt-3 text-sm font-bold text-amber-800">QR for in-person setup</p>
+      {data?.isSaving ? (
+        <div className="flex flex-col items-center justify-center py-12 text-amber-600">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-600 border-t-transparent" />
+          <p className="mt-4 font-bold">Generating magic link...</p>
         </div>
-        <div className="space-y-3">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 font-mono text-sm text-slate-600">
-            {setupMagicLink}
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+          <div className="rounded-3xl border border-amber-100 bg-amber-50 p-5 text-center">
+            <QRCodeSVG value={finalLink} size={132} className="mx-auto rounded-2xl bg-white p-2" />
+            <p className="mt-3 text-sm font-bold text-amber-800">QR for in-person setup</p>
           </div>
-          <Button className="h-14 w-full rounded-2xl bg-[#25D366] text-base font-bold text-white hover:bg-[#20bd5a]">
-            <MessageCircle className="h-5 w-5" />
-            Send via WhatsApp
-          </Button>
-          <Link href="/dashboard/demo" className="inline-flex items-center gap-1 font-bold text-amber-700">
-            Open caregiver dashboard <ChevronRight className="h-4 w-4" />
-          </Link>
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 font-mono text-sm text-slate-600 break-all">
+              {finalLink}
+            </div>
+            <Button onClick={() => {
+              const msg = `Mum, tap this link and add it to your home screen. I'll send you a good morning every day. ❤️ ${finalLink}`;
+              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+            }} className="h-14 w-full rounded-2xl bg-[#25D366] text-base font-bold text-white hover:bg-[#20bd5a]">
+              <MessageCircle className="h-5 w-5" />
+              Send via WhatsApp
+            </Button>
+            <Link href="/dashboard/demo" className="inline-flex items-center gap-1 font-bold text-amber-700">
+              Open caregiver dashboard <ChevronRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
     </StepShell>
   );
 }

@@ -25,21 +25,29 @@ export async function POST(request: Request) {
     const weather = body.weather?.trim() || "sunny";
     const language = body.language || "en";
 
+    const todayDay = new Date().toLocaleDateString('en-SG', { weekday: 'long', timeZone: 'Asia/Singapore' });
+
     // 1. Generate the personalized greeting text using GPT-5-nano
     const chatResponse = await openai.chat.completions.create({
       model: "gpt-5-nano",
       messages: [
         {
           role: "system",
-          content: "You are a warm, caring AI companion for elderly people in Singapore. Keep your responses to a single, short, cheerful sentence.",
+          content: "You are a warm, caring AI companion for elderly people in Singapore. Speak naturally, kindly, and conversationally. Use a very warm, slightly local Singaporean tone.",
         },
         {
           role: "user",
-          content: `Write a short morning greeting for ${nickname}. The weather today is ${weather}. Write it in ${language === 'zh' ? 'Mandarin Chinese' : 'English'}. Include a friendly emoji.`,
+          content: `Write a morning greeting for ${nickname}. It is currently ${todayDay}. The weather today is ${weather}.
+Write it in ${language === 'zh' ? 'Mandarin Chinese' : 'English'}.
+The message should be 3 to 4 sentences. 
+- Say good morning.
+- Mention what day it is today and the weather.
+- Wish them a wonderful day ahead.
+- Casually mention that you have some interesting news for them today.
+Make it sound like a friendly voice message. Do not include emojis, this will be read aloud by text-to-speech.`,
         },
       ],
-      temperature: 0.7,
-      max_tokens: 60,
+      max_completion_tokens: 150,
     });
 
     const greeting = chatResponse.choices[0].message.content?.trim() || `Good morning, ${nickname}!`;
@@ -48,23 +56,30 @@ export async function POST(request: Request) {
     const imagePrompt = `Soft watercolour illustration, warm pastel colours, Singapore context, ${weather} morning, cosy and cheerful, no text, suitable for elderly audience. ${design.promptStyle || ''}`;
     
     let imageUrl = design.heroImage ?? "/morning_illustration.png";
+    let imageError: string | null = null;
     
     try {
       const imageResponse = await openai.images.generate({
-        model: "gpt-image-2",
+        model: "gpt-image-1",
         prompt: imagePrompt,
         n: 1,
-        size: "1024x1024",
+        size: "1536x1024",
+        quality: "low",
       });
-      imageUrl = imageResponse.data?.[0]?.url ?? imageUrl;
+      const generatedImage = imageResponse.data?.[0];
+      imageUrl = generatedImage?.url ?? imageUrl;
+      if (!generatedImage?.url && generatedImage?.b64_json) {
+        imageUrl = `data:image/png;base64,${generatedImage.b64_json}`;
+      }
     } catch (imgError: unknown) {
-      void imgError;
+      imageError = getErrorMessage(imgError);
     }
 
     return NextResponse.json({
       greeting,
       imageUrl,
-      imageSource: imageUrl.startsWith("http") ? "openai" : "static-fallback",
+      imageSource: imageUrl.startsWith("http") || imageUrl.startsWith("data:") ? "openai" : "static-fallback",
+      imageError: process.env.NODE_ENV === "production" ? undefined : imageError,
       designId: design.id,
       prompt: imagePrompt,
       generatedForDate: new Date().toISOString().slice(0, 10),

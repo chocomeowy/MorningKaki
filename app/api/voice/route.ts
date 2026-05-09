@@ -6,6 +6,16 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "dummy_key_to_bypass_build_error",
 });
 
+interface VoiceAiOutput {
+  reply?: string;
+  sentiment_score?: number;
+  sentiment_label?: string;
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Voice processing failed";
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -13,6 +23,7 @@ export async function POST(request: Request) {
     const seniorId = formData.get("seniorId") as string;
     const nickname = formData.get("nickname") as string || "Ah Gong";
     const language = formData.get("language") as string || "en";
+    const confirmWrite = formData.get("confirmWrite") === "true";
 
     if (!audioFile) {
       return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
@@ -25,7 +36,6 @@ export async function POST(request: Request) {
     });
 
     const transcript = transcription.text;
-    console.log("Transcript:", transcript);
 
     if (!transcript.trim()) {
       return NextResponse.json({ error: "Could not hear any speech" }, { status: 400 });
@@ -54,10 +64,10 @@ export async function POST(request: Request) {
         },
       ],
       response_format: { type: "json_object" },
-      temperature: 0.7,
+      max_completion_tokens: 180,
     });
 
-    const aiOutput = JSON.parse(chatResponse.choices[0].message.content || "{}");
+    const aiOutput = JSON.parse(chatResponse.choices[0].message.content || "{}") as VoiceAiOutput;
     const replyText = aiOutput.reply || "I'm always here to listen.";
     const sentimentScore = aiOutput.sentiment_score || 50;
     const sentimentLabel = aiOutput.sentiment_label || "neutral";
@@ -82,13 +92,11 @@ export async function POST(request: Request) {
 
       if (ttsResponse.ok) {
         audioBuffer = await ttsResponse.arrayBuffer();
-      } else {
-        console.error("ElevenLabs error:", await ttsResponse.text());
       }
     }
 
     // 4. Save the log to Supabase
-    if (seniorId) {
+    if (seniorId && confirmWrite) {
       await supabase.from("voice_logs").insert({
         senior_id: seniorId,
         transcript: transcript,
@@ -116,8 +124,7 @@ export async function POST(request: Request) {
       });
     }
 
-  } catch (error: any) {
-    console.error("Voice processing error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
 }

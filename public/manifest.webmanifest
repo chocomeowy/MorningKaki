@@ -1,0 +1,27 @@
+{
+  "name": "MorningKaki",
+  "short_name": "MorningKaki",
+  "description": "A daily AI companion for Singapore seniors.",
+  "start_url": "/s/demo",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fff8ed",
+  "theme_color": "#f59e0b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/morning_illustration.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/morning_illustration.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["health", "lifestyle"],
+  "lang": "en-SG"
+}

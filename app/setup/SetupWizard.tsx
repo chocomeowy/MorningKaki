@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import Image from "next/image";
 import {
   Check,
@@ -14,27 +15,83 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StepContent } from "./_components/StepContent";
 import { setupSteps } from "./setup-data";
+import { supabase } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+
+export interface MedicationDraft {
+  id: string;
+  name: string;
+  timing: string;
+}
+
+export interface ReminderDraft {
+  id: string;
+  name: string;
+  time: string;
+  location: string;
+}
+
+export interface WizardData {
+  fullName: string;
+  nickname: string;
+  language: string;
+  medications: MedicationDraft[];
+  reminders: ReminderDraft[];
+  timings: {
+    morning: string;
+    med: string;
+    quietStart: string;
+    quietEnd: string;
+  };
+  magicToken: string;
+  isSaving: boolean;
+  seniorId?: string;
+}
+
+interface WizardContextValue {
+  data: WizardData;
+  setData: Dispatch<SetStateAction<WizardData>>;
+}
+
+export const WizardContext = createContext<WizardContextValue | null>(null);
+
+export function useWizard() {
+  return useContext(WizardContext);
+}
 
 export function SetupWizard() {
   const [step, setStep] = useState(0);
   const completion = useMemo(() => ((step + 1) / setupSteps.length) * 100, [step]);
   const isLastStep = step === setupSteps.length - 1;
 
-  return (
-    <main className="min-h-screen bg-[#fbf7ef] text-slate-900">
-      <div className="mx-auto grid min-h-screen w-full max-w-6xl gap-6 px-4 py-4 md:grid-cols-[0.9fr_1.1fr] md:px-8 md:py-8">
-        <GiftPanel />
+  const [data, setData] = useState<WizardData>({
+    fullName: "Lim Chee Seng",
+    nickname: "Ah Gong",
+    language: "en",
+    medications: [{ id: "1", name: "Amlodipine 5mg", timing: "Morning after breakfast" }],
+    reminders: [{ id: "1", name: "Polyclinic checkup", time: "14:00", location: "Toa Payoh Polyclinic" }],
+    timings: { morning: "07:30", med: "08:00", quietStart: "21:00", quietEnd: "07:00" },
+    magicToken: "",
+    isSaving: false
+  });
 
-        <section className="flex h-[calc(100vh-2rem)] flex-col rounded-[2rem] border border-amber-100 bg-white shadow-[0_20px_80px_rgba(120,72,12,0.12)] md:h-[calc(100vh-4rem)]">
-          <WizardHeader step={step} completion={completion} />
-          <StepRail step={step} setStep={setStep} />
-          <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-8">
-            <StepContent step={step} />
-          </div>
-          <WizardFooter isLastStep={isLastStep} step={step} setStep={setStep} />
-        </section>
-      </div>
-    </main>
+  return (
+    <WizardContext.Provider value={{ data, setData }}>
+      <main className="min-h-screen bg-[#fbf7ef] text-slate-900">
+        <div className="mx-auto grid min-h-screen w-full max-w-6xl gap-6 px-4 py-4 md:grid-cols-[0.9fr_1.1fr] md:px-8 md:py-8">
+          <GiftPanel />
+
+          <section className="flex h-[calc(100vh-2rem)] flex-col rounded-[2rem] border border-amber-100 bg-white shadow-[0_20px_80px_rgba(120,72,12,0.12)] md:h-[calc(100vh-4rem)]">
+            <WizardHeader step={step} completion={completion} />
+            <StepRail step={step} setStep={setStep} />
+            <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-8">
+              <StepContent step={step} />
+            </div>
+            <WizardFooter isLastStep={isLastStep} step={step} setStep={setStep} />
+          </section>
+        </div>
+      </main>
+    </WizardContext.Provider>
   );
 }
 
@@ -178,6 +235,9 @@ function WizardFooter({
   step: number;
   setStep: (value: number) => void;
 }) {
+  const context = useWizard();
+  const router = useRouter();
+
   return (
     <footer className="flex items-center justify-between gap-3 rounded-b-[2rem] border-t border-slate-100 bg-white px-5 py-4 sm:px-8">
       <Button
@@ -190,7 +250,27 @@ function WizardFooter({
         Back
       </Button>
       <Button
-        onClick={() => setStep(Math.min(step + 1, setupSteps.length - 1))}
+        onClick={async () => {
+          if (isLastStep) {
+            router.push(`/dashboard/${context?.data?.seniorId || 'demo'}`);
+            return;
+          }
+
+          if (step === 3 && context) {
+            context.setData((prev) => ({ ...prev, isSaving: true }));
+            const token = Math.random().toString(36).substring(2, 8);
+            
+            const { data } = await supabase.from("seniors").insert({
+              nickname: context.data.nickname,
+              full_name: context.data.fullName,
+              primary_language: context.data.language,
+              magic_token: token,
+            }).select("id").single();
+
+            context.setData((prev) => ({ ...prev, magicToken: token, seniorId: data?.id, isSaving: false }));
+          }
+          setStep(Math.min(step + 1, setupSteps.length - 1));
+        }}
         className="h-12 rounded-2xl bg-slate-950 px-5 text-base font-bold text-white hover:bg-slate-800"
       >
         {isLastStep ? "Finish setup" : "Continue"}

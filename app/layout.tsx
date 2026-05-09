@@ -15,6 +15,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "MorningKaki",
   description: "A daily AI companion PWA for Singapore seniors and caregivers.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "MorningKaki",
+  },
 };
 
 export default function RootLayout({

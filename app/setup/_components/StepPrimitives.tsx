@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ChangeEventHandler, ReactNode } from "react";
 import {
   Camera,
   HeartHandshake,
@@ -34,11 +34,19 @@ export function StepShell({
   );
 }
 
-export function Field({ label, value }: { label: string; value: string }) {
+export function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange?: ChangeEventHandler<HTMLInputElement>;
+}) {
   return (
     <label className="block">
       <Label>{label}</Label>
-      <input defaultValue={value} className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-lg font-bold outline-none focus:border-amber-400 focus:bg-white" />
+      <input value={value} onChange={onChange} className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-lg font-bold outline-none focus:border-amber-400 focus:bg-white" />
     </label>
   );
 }
