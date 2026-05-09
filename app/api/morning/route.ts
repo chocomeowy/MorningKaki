@@ -11,6 +11,7 @@ interface MorningRequest {
   nickname?: string;
   language?: "en" | "zh" | "hokkien" | "cantonese" | "ms";
   weather?: string;
+  randomTheme?: boolean;
 }
 
 function getErrorMessage(error: unknown) {
@@ -73,7 +74,14 @@ Make it sound like a friendly voice message. Do not include emojis, this will be
           "Serene Singapore good morning card. Calm zen garden with soft morning mist, orchids and tropical flowers, gentle bamboo, warm amber and green tones, birds perched on branches, peaceful elderly-friendly aesthetic, vibrant warm watercolour photography wide landscape format.",
       },
     ];
-    const theme = themes[dayOfYear % 3];
+    
+    // If randomTheme is requested (like from the Demo Generator), pick randomly.
+    // Otherwise, tie it to the day of the year so all seniors get the same theme that morning.
+    const themeIndex = body.randomTheme 
+      ? Math.floor(Math.random() * themes.length)
+      : dayOfYear % 3;
+      
+    const theme = themes[themeIndex];
 
     const imagePrompt = `${theme.prompt} No text overlaid. Suitable for a Singapore elderly senior audience. ${design.promptStyle || ""}`;
     
@@ -82,7 +90,7 @@ Make it sound like a friendly voice message. Do not include emojis, this will be
     
     try {
       const imageResponse = await openai.images.generate({
-        model: "gpt-image-1",
+        model: "gpt-image-2-2026-04-21",
         prompt: imagePrompt,
         n: 1,
         size: "1536x1024",

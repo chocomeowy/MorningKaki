@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useState, useMemo } from "react";
+import { supabase } from "@/lib/supabase/client";
+
 import {
   AlertTriangle,
   Bell,
@@ -12,6 +15,7 @@ import {
   Play,
   ShieldCheck,
   TrendingUp,
+  Loader2,
 } from "lucide-react";
 import {
   Bar,
@@ -44,11 +48,39 @@ const memories = [
   { date: "Monday", mood: "❤️", text: "My grandson came to visit after school.", time: "2:05" },
 ];
 
-export function DashboardView() {
+export function DashboardView({ id }: { id: string }) {
+  const [senior, setSenior] = useState<any>(null);
+  
+  const pageUrl = useMemo(() => {
+    return typeof window !== "undefined" ? window.location.origin : "https://morningkaki.vercel.app";
+  }, []);
+
+  useEffect(() => {
+    if (id && id !== 'demo') {
+      supabase.from("seniors").select("*").eq("id", id).single().then(({ data }) => setSenior(data));
+    } else {
+      setSenior({
+        nickname: "Ah Gong",
+        full_name: "Lim Chee Seng",
+        magic_token: "demo",
+        primary_language: "en",
+        morning_time: "07:30",
+      });
+    }
+  }, [id]);
+
+  if (!senior) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f4ee]">
+        <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+      </div>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#f7f4ee] text-slate-950">
       <div className="mx-auto grid w-full max-w-7xl gap-5 px-4 py-4 lg:grid-cols-[20rem_1fr] lg:px-6">
-        <ProfileRail />
+        <ProfileRail senior={senior} pageUrl={pageUrl} />
         <section className="space-y-5">
           <DashboardHeader />
           <StatusGrid />
@@ -80,29 +112,47 @@ export function DashboardView() {
   );
 }
 
-function ProfileRail() {
+function ProfileRail({ senior, pageUrl }: { senior: any; pageUrl: string }) {
+  const magicLink = `${pageUrl}/s/${senior.magic_token}`;
+  
+  const displayLang = senior.primary_language === "zh" ? "Mandarin" 
+    : senior.primary_language === "hokkien" ? "Hokkien" 
+    : senior.primary_language === "cantonese" ? "Cantonese" 
+    : senior.primary_language === "ms" ? "Malay" 
+    : "English";
+
   return (
     <aside className="rounded-[2rem] bg-slate-950 p-5 text-white lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]">
       <div className="flex items-center gap-4">
-        <Avatar className="h-16 w-16 border-2 border-amber-200">
-          <AvatarImage src="/placeholder-avatar.jpg" />
-          <AvatarFallback className="bg-amber-100 text-lg font-extrabold text-amber-800">AG</AvatarFallback>
+        <Avatar className="h-16 w-16 border-2 border-amber-200 bg-white">
+          {senior.photo_url ? (
+            <AvatarImage src={senior.photo_url} className="object-cover" />
+          ) : (
+            <AvatarFallback className="bg-amber-100 text-xl font-extrabold text-amber-800">
+              {senior.nickname?.substring(0, 2).toUpperCase() || "SN"}
+            </AvatarFallback>
+          )}
         </Avatar>
         <div>
-          <p className="text-2xl font-extrabold">Ah Gong</p>
-          <p className="text-sm font-bold text-slate-400">Last active 07:45 AM</p>
+          <p className="text-2xl font-extrabold truncate max-w-[180px]">{senior.nickname}</p>
+          <p className="text-sm font-bold text-slate-400">Last active just now</p>
         </div>
       </div>
 
       <div className="mt-6 rounded-[1.5rem] bg-white/8 p-4">
-        <p className="text-sm font-bold text-slate-400">Magic link</p>
-        <p className="mt-1 break-all font-mono text-sm text-amber-100">morningkaki.vercel.app/s/demo</p>
+        <p className="text-sm font-bold text-slate-400">Magic link (Tap to copy)</p>
+        <button 
+          onClick={() => navigator.clipboard.writeText(magicLink)}
+          className="mt-1 text-left break-all font-mono text-sm text-amber-100 hover:text-amber-300 transition"
+        >
+          {magicLink.replace("https://", "").replace("http://", "")}
+        </button>
       </div>
 
       <div className="mt-6 space-y-3">
         <RailItem icon={ShieldCheck} label="Senior login" value="Not required" />
-        <RailItem icon={Bell} label="Morning greeting" value="07:30 AM" />
-        <RailItem icon={Phone} label="Primary language" value="English" />
+        <RailItem icon={Bell} label="Morning greeting" value={senior.morning_time ? senior.morning_time.substring(0,5) : "07:30"} />
+        <RailItem icon={Phone} label="Primary language" value={displayLang} />
       </div>
 
       <div className="mt-6 rounded-[1.5rem] border border-amber-200/20 bg-amber-200/10 p-4">
