@@ -143,6 +143,10 @@ const getMoodStorageKey = (seniorId: string) => {
   return `morningkaki:mood:${seniorId}:${today}`;
 };
 
+function isChineseReadingLanguage(language: string) {
+  return language === "zh" || language === "hokkien" || language === "cantonese";
+}
+
 export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const defaultLang = senior.primary_language || "en";
   const [language, setLanguage] = useState<string>(defaultLang);
@@ -164,7 +168,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const [rems, setRems] = useState<ReminderRow[]>([]);
   const [contextReady, setContextReady] = useState(false);
 
-  const content = copy[language === "zh" || language === "hokkien" || language === "cantonese" ? "zh" : "en"];
+  const content = copy[isChineseReadingLanguage(language) ? "zh" : "en"];
 
   useEffect(() => {
     async function loadData() {
@@ -215,7 +219,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
     const shareImageUrl = imagePath.startsWith("data:") ? pageUrl : new URL(imagePath, origin).toString();
     const greeting = morningData?.greeting ?? content.greeting(senior.nickname);
     const lines =
-      language === "zh"
+      isChineseReadingLanguage(language)
         ? [
             `${greeting}！`,
             content.subcopy,
@@ -508,7 +512,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
                 </p>
               </div>
               <span className={`rounded-full px-3 py-1 text-lg font-extrabold ${m.status === 'Done' ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                {m.status === 'Done' ? (language === 'zh' ? '已吃' : 'Done') : (language === 'zh' ? '准备好' : 'Ready')}
+                {m.status === 'Done' ? (isChineseReadingLanguage(language) ? '已吃' : 'Done') : (isChineseReadingLanguage(language) ? '准备好' : 'Ready')}
               </span>
             </div>
           ))}
@@ -524,7 +528,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
                 </p>
               </div>
               <span className={`rounded-full px-3 py-1 text-lg font-extrabold ${r.acknowledged_at ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                {r.acknowledged_at ? (language === 'zh' ? '已确认' : 'Confirmed') : (language === 'zh' ? '稍后' : 'Later')}
+                {r.acknowledged_at ? (isChineseReadingLanguage(language) ? '已确认' : 'Confirmed') : (isChineseReadingLanguage(language) ? '稍后' : 'Later')}
               </span>
             </div>
           ))}

@@ -11,15 +11,15 @@ const openai = new OpenAI({
 const themes = [
   {
     name: "blessing",
-    prompt: "Soft watercolour illustration, warm pastel colours, Singapore context, morning sunrise, blooming pink lotus and orchids, doves flying, cosy and cheerful, no text, suitable for elderly audience.",
+    prompt: "Soft watercolour illustration, warm pastel colours, Singapore context, morning sunrise, blooming pink lotus and orchids, doves flying, cosy and cheerful, suitable for elderly audience. Include the words 'Good Morning' and '早安' in beautiful, large, readable golden calligraphy.",
   },
   {
     name: "gardens",
-    prompt: "Soft watercolour illustration, warm pastel colours, Singapore context, Gardens by the Bay supertrees at morning sunrise, lush greenery, cosy and cheerful, no text, suitable for elderly audience.",
+    prompt: "Soft watercolour illustration, warm pastel colours, Singapore context, Gardens by the Bay supertrees at morning sunrise, lush greenery, cosy and cheerful, suitable for elderly audience. Include the words 'Good Morning' and '早安' in elegant white calligraphy.",
   },
   {
     name: "calm",
-    prompt: "Soft watercolour illustration, warm pastel colours, Singapore context, calm morning mist over a zen garden with bamboo, cosy and cheerful, no text, suitable for elderly audience.",
+    prompt: "Soft watercolour illustration, warm pastel colours, Singapore context, calm morning mist over a zen garden with bamboo, cosy and cheerful, suitable for elderly audience. Include the words 'Good Morning' and '早安' in gentle soft-focus calligraphy.",
   }
 ];
 
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     for (const theme of themes) {
       console.log(`Generating image for theme: ${theme.name}`);
       
-      const imagePrompt = `${theme.prompt} No text overlaid. Suitable for a Singapore elderly senior audience.`;
+      const imagePrompt = `${theme.prompt} The text should be clear and high contrast for seniors.`;
       
       const imageResponse = await openai.images.generate({
         model: "gpt-image-2-2026-04-21",

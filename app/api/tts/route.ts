@@ -23,6 +23,7 @@ export async function POST(request: Request) {
     }
 
     const voiceId = getVoiceId(language);
+    const voiceLanguage = getVoiceLanguage(language);
     const ttsResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
       method: "POST",
       headers: {
@@ -45,6 +46,8 @@ export async function POST(request: Request) {
     return new NextResponse(audioBuffer, {
       headers: {
         "Content-Type": "audio/mpeg",
+        "X-TTS-Language": voiceLanguage,
+        "X-TTS-Voice-Id": voiceId,
       },
     });
   } catch (error: unknown) {
@@ -62,4 +65,16 @@ function getVoiceId(language: string | undefined) {
   }
 
   return process.env.ELEVENLABS_ENGLISH_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
+}
+
+function getVoiceLanguage(language: string | undefined) {
+  if (language === "zh" || language === "hokkien" || language === "cantonese") {
+    return "zh";
+  }
+
+  if (language === "ms") {
+    return "ms";
+  }
+
+  return "en";
 }
