@@ -139,6 +139,21 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const [showMoodModal, setShowMoodModal] = useState(false);
   const [isSavingMood, setIsSavingMood] = useState(false);
   const [moodSaveError, setMoodSaveError] = useState(false);
+  const [meds, setMeds] = useState<any[]>([]);
+  const [rems, setRems] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadData() {
+      if (!senior.id) return;
+      const [mRes, rRes] = await Promise.all([
+        supabase.from("medications").select("*").eq("senior_id", senior.id),
+        supabase.from("reminders").select("*").eq("senior_id", senior.id).gte("remind_at", new Date().toISOString().split('T')[0]),
+      ]);
+      setMeds(mRes.data || []);
+      setRems(rRes.data || []);
+    }
+    loadData();
+  }, [senior.id]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -425,25 +440,43 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
           ) : null}
         </section>
 
-        <section className="mt-5 space-y-3 px-4">
+        <section className="mt-5 space-y-3 px-4 pb-20">
           <SectionTitle title={content.today} icon={BellRing} />
-          {content.reminders.map((item) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.title} className="flex min-h-20 items-center gap-4 rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-amber-100">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-                  <Icon className="h-6 w-6" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-lg font-extrabold">{item.title}</p>
-                  <p className="text-base font-bold text-slate-500">{item.time}</p>
-                </div>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-lg font-extrabold text-emerald-700">
-                  {item.status}
-                </span>
+          {meds.map((m) => (
+            <div key={m.id} className="flex min-h-20 items-center gap-4 rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-amber-100">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                <Pill className="h-6 w-6" />
               </div>
-            );
-          })}
+              <div className="min-w-0 flex-1">
+                <p className="text-lg font-extrabold">{m.name}</p>
+                <p className="text-base font-bold text-slate-500">
+                  {m.schedule_times?.[0] ? m.schedule_times[0].substring(0, 5) : "Morning"}
+                </p>
+              </div>
+              <span className={`rounded-full px-3 py-1 text-lg font-extrabold ${m.status === 'Done' ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                {m.status === 'Done' ? (language === 'zh' ? '已吃' : 'Done') : (language === 'zh' ? '准备好' : 'Ready')}
+              </span>
+            </div>
+          ))}
+          {rems.filter(r => new Date(r.remind_at).toDateString() === new Date().toDateString()).map((r) => (
+            <div key={r.id} className="flex min-h-20 items-center gap-4 rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-amber-100">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                <CalendarClock className="h-6 w-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-lg font-extrabold">{r.text}</p>
+                <p className="text-base font-bold text-slate-500">
+                  {new Date(r.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+              <span className={`rounded-full px-3 py-1 text-lg font-extrabold ${r.acknowledged_at ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                {r.acknowledged_at ? (language === 'zh' ? '已确认' : 'Confirmed') : (language === 'zh' ? '稍后' : 'Later')}
+              </span>
+            </div>
+          ))}
+          {meds.length === 0 && rems.length === 0 && (
+            <p className="py-4 text-center text-slate-500 italic">No events scheduled for today.</p>
+          )}
         </section>
 
         <audio ref={audioPlayerRef} className="hidden" />

@@ -111,8 +111,8 @@ export function DashboardView({ id }: { id: string }) {
           <DashboardHeader />
           <StatusGrid />
           <Tabs defaultValue="today" className="space-y-5">
-            <TabsList className="grid h-12 w-full grid-cols-3 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
-              {["today", "trends", "memories"].map((item) => (
+            <TabsList className="grid h-12 w-full grid-cols-4 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
+              {["today", "trends", "memories", "manage"].map((item) => (
                 <TabsTrigger
                   key={item}
                   value={item}
@@ -123,13 +123,16 @@ export function DashboardView({ id }: { id: string }) {
               ))}
             </TabsList>
             <TabsContent value="today" className="space-y-5">
-              <TodayPanel />
+              <TodayPanel seniorId={senior.id} />
             </TabsContent>
             <TabsContent value="trends" className="space-y-5">
               <TrendsPanel />
             </TabsContent>
             <TabsContent value="memories" className="space-y-5">
               <MemoriesPanel />
+            </TabsContent>
+            <TabsContent value="manage" className="space-y-5">
+              <ManagePanel senior={senior} setSenior={setSenior} />
             </TabsContent>
           </Tabs>
         </section>
@@ -217,7 +220,32 @@ function StatusGrid() {
   );
 }
 
-function TodayPanel() {
+function TodayPanel({ seniorId }: { seniorId: string }) {
+  const [meds, setMeds] = useState<any[]>([]);
+  const [rems, setRems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      if (!seniorId || seniorId === "demo") {
+        setMeds([{ name: "Blood pressure meds", status: "Done", time: "08:10 AM" }]);
+        setRems([{ text: "Polyclinic checkup", remind_at: "2026-05-09T14:00:00" }]);
+        setLoading(false);
+        return;
+      }
+      const [mRes, rRes] = await Promise.all([
+        supabase.from("medications").select("*").eq("senior_id", seniorId),
+        supabase.from("reminders").select("*").eq("senior_id", seniorId).gte("remind_at", new Date().toISOString().split('T')[0]),
+      ]);
+      setMeds(mRes.data || []);
+      setRems(rRes.data || []);
+      setLoading(false);
+    }
+    loadData();
+  }, [seniorId]);
+
+  if (loading) return <div className="p-10 text-center"><Loader2 className="mx-auto animate-spin" /></div>;
+
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_22rem]">
       <section className="rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -227,8 +255,13 @@ function TodayPanel() {
           He took his morning blood pressure medicine without prompting.
         </p>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <ReminderCard icon={Pill} title="Blood pressure meds" meta="Acknowledged at 08:10 AM" done />
-          <ReminderCard icon={CalendarClock} title="Polyclinic checkup" meta="Upcoming at 02:00 PM" />
+          {meds.map(m => (
+            <ReminderCard key={m.id} icon={Pill} title={m.name} meta={`Dosage: ${m.dosage || 'Standard'}`} done={m.status === 'Done'} />
+          ))}
+          {rems.map(r => (
+            <ReminderCard key={r.id} icon={CalendarClock} title={r.text} meta={`At ${new Date(r.remind_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`} done={!!r.acknowledged_at} />
+          ))}
+          {meds.length === 0 && rems.length === 0 && <p className="text-slate-500 italic">No reminders for today.</p>}
         </div>
       </section>
       <section className="rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -237,10 +270,67 @@ function TodayPanel() {
           <p className="font-extrabold">No action needed</p>
           <p className="mt-1 text-sm font-medium">Mood and adherence look stable today.</p>
         </div>
-        <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-amber-900">
-          <p className="font-extrabold">Next reminder</p>
-          <p className="mt-1 text-sm font-medium">Polyclinic checkup at 2:00 PM.</p>
+      </section>
+    </div>
+  );
+}
+
+function ManagePanel({ senior, setSenior }: { senior: any; setSenior: (s: any) => void }) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [nickname, setNickname] = useState(senior.nickname || "");
+  const [morningTime, setMorningTime] = useState(senior.morning_time || "07:30");
+
+  const handleUpdate = async () => {
+    setIsSaving(true);
+    const { data, error } = await supabase
+      .from("seniors")
+      .update({ nickname, morning_time: morningTime })
+      .eq("id", senior.id)
+      .select()
+      .single();
+    
+    if (!error && data) setSenior(data);
+    setIsSaving(false);
+  };
+
+  return (
+    <div className="grid gap-5">
+      <section className="rounded-[2rem] bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <h3 className="text-xl font-extrabold">Senior Profile</h3>
+        <div className="mt-6 space-y-4 max-w-md">
+          <div className="space-y-1.5">
+            <label className="text-sm font-bold text-slate-500">Nickname</label>
+            <input 
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              className="w-full h-12 rounded-xl border border-slate-200 px-4 font-bold outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-bold text-slate-500">Morning Greeting Time</label>
+            <input 
+              type="time"
+              value={morningTime}
+              onChange={(e) => setMorningTime(e.target.value)}
+              className="w-full h-12 rounded-xl border border-slate-200 px-4 font-bold outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <button 
+            onClick={handleUpdate}
+            disabled={isSaving}
+            className="w-full h-12 bg-slate-950 text-white rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50"
+          >
+            {isSaving ? "Saving..." : "Save Changes"}
+          </button>
         </div>
+      </section>
+
+      <section className="rounded-[2rem] bg-white p-6 shadow-sm ring-1 ring-slate-200 opacity-50 pointer-events-none">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-extrabold">Medications & Reminders</h3>
+          <Badge>Coming Soon</Badge>
+        </div>
+        <p className="mt-2 text-sm text-slate-500">Medication editing will be available in the next update.</p>
       </section>
     </div>
   );
