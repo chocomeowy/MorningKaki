@@ -5,6 +5,9 @@ interface TtsRequest {
   language?: string;
 }
 
+const CANTONESE_VOICE_ID = "cHDwXsKG0qHMNLIjOusN";
+const DEFAULT_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "TTS failed";
 }
@@ -62,24 +65,20 @@ export async function POST(request: Request) {
 }
 
 function getVoiceId(language: string | undefined) {
-  if (language === "zh" || language === "hokkien" || language === "cantonese") {
-    return process.env.ELEVENLABS_CHINESE_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
+  if (language === "cantonese" || language === "hokkien") {
+    return process.env.ELEVENLABS_CANTONESE_VOICE_ID || CANTONESE_VOICE_ID;
   }
 
-  if (language === "ms") {
-    return process.env.ELEVENLABS_MALAY_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
+  if (language === "zh") {
+    return process.env.ELEVENLABS_CHINESE_VOICE_ID || process.env.ELEVENLABS_CANTONESE_VOICE_ID || CANTONESE_VOICE_ID;
   }
 
-  return process.env.ELEVENLABS_ENGLISH_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
+  return process.env.ELEVENLABS_ENGLISH_VOICE_ID || DEFAULT_VOICE_ID;
 }
 
 function getVoiceLanguage(language: string | undefined) {
   if (language === "zh" || language === "hokkien" || language === "cantonese") {
     return "zh";
-  }
-
-  if (language === "ms") {
-    return "ms";
   }
 
   return "en";

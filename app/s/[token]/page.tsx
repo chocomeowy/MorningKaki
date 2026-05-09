@@ -6,6 +6,14 @@ export default async function SeniorPage(props: { params: Promise<{ token: strin
   const params = await props.params;
   const { token } = params;
 
+  if (token === "demo") {
+    return <SeniorClient senior={{
+      id: "demo",
+      nickname: "Ah Gong",
+      primary_language: "en",
+    }} />;
+  }
+
   // 1. Resolve token to profile
   const { data: senior } = await supabase
     .from("seniors")

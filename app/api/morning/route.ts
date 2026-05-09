@@ -12,7 +12,7 @@ const openai = new OpenAI({
 interface MorningRequest {
   designId?: string;
   nickname?: string;
-  language?: "en" | "zh" | "hokkien" | "cantonese" | "ms";
+  language?: "en" | "zh" | "hokkien" | "cantonese";
   weather?: string;
   randomTheme?: boolean;
   medicines?: string[];
@@ -81,8 +81,9 @@ export async function POST(request: Request) {
             "Do not invent appointment locations, clinics, documents, symptoms, or medicine instructions beyond the provided reminders.",
             "For appointments and reminders, repeat only the provided reminder text and time. Do not add what to bring, where to go, or medical advice unless it is explicitly provided.",
             "For news, preserve names and offices accurately. PM Wong means Lawrence Wong, not Lee Hsien Loong. If a Chinese name is uncertain, keep the English name.",
-            "For Hokkien or Cantonese, write in Chinese text, not English or romanisation, so ElevenLabs can read it with a Chinese-capable voice.",
-            "If the language or dialect is Mandarin, Hokkien, or Cantonese, every sentence must be Simplified Chinese text. Translate medicine, weather, reminders, and local news into Chinese. Do not leave English words except the senior nickname.",
+            "Keep Singapore place names like Toa Payoh, CNA, NEA, Canvas, IMDA, and CSA exactly as written.",
+            "For Cantonese, write in Traditional Chinese text with natural Hong Kong or Singapore Cantonese phrasing, not English or romanisation.",
+            "If the language or dialect is Mandarin or Cantonese, every sentence must be Chinese text. Translate medicine, weather, reminders, and local news into Chinese. Do not leave English words except the senior nickname and uncertain proper names.",
           ].join("\n"),
         },
       ];
@@ -236,6 +237,8 @@ function sanitizeSpokenScript(script: string | undefined) {
     .replace(/财政部长兼副总理Lawrence Wong|副总理Lawrence Wong/g, "PM Lawrence Wong")
     .replace(/，请准时出门，带好您的身份证和医疗卡/g, "，请按提醒的时间安排")
     .replace(/，带好您的身份证和医疗卡/g, "")
+    .replace(/大巴窩|大巴窑|大巴窯/g, "Toa Payoh")
+    .replace(/東北季風過來，|东北季风过来，/g, "")
     .trim();
 }
 
@@ -244,18 +247,13 @@ function getDisplayGreeting(language: MorningRequest["language"], nickname: stri
     return `早上好，${nickname}`;
   }
 
-  if (language === "ms") {
-    return `Selamat pagi, ${nickname}`;
-  }
-
   return `Good morning, ${nickname}`;
 }
 
 function getLanguageInstruction(language: MorningRequest["language"]) {
   if (language === "zh") return "Mandarin Chinese, natural Singapore style";
-  if (language === "hokkien") return "Chinese text only, with a warm Singapore Hokkien family tone. ElevenLabs will read it using a Chinese voice, so do not use English or romanised Hokkien.";
-  if (language === "cantonese") return "Chinese text only, with a warm Cantonese family tone. ElevenLabs will read it using a Chinese voice, so do not use English or romanised Cantonese.";
-  if (language === "ms") return "Malay as spoken warmly in Singapore";
+  if (language === "hokkien") return "Legacy dialect selection; write Cantonese-style Traditional Chinese text because the app now uses the Cantonese voice.";
+  if (language === "cantonese") return "Cantonese-style Traditional Chinese text, warm and natural for Singapore seniors. Do not use English or romanised Cantonese.";
   return "English with a gentle Singapore tone";
 }
 
@@ -313,15 +311,6 @@ function getFallbackSpokenScript({
       `记得照家人安排，按时吃药。`,
       `今天如果有预约或提醒，慢慢来，不用着急。`,
       `本地有一些生活消息，等一下可以看看。祝你今天开心、平安、身体健康。`,
-    ].join("");
-  }
-
-  if (language === "ms") {
-    return [
-      `Selamat pagi, ${nickname}. Hari ini ${todayDay}, cuaca di Singapura ${weather}. `,
-      `Ingat ubat: ${medicines.join(", ")}. `,
-      `Peringatan hari ini: ${reminders.join(", ")}. `,
-      `Berita tempatan: ${localNews.join(", ")}. Semoga hari ini ceria dan sihat.`,
     ].join("");
   }
 

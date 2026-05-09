@@ -136,35 +136,7 @@ const copy = {
       "大巴窑地铁站附近新的有盖走道本周开放。",
     ],
   },
-  ms: {
-    greeting: (name: string) => `Selamat pagi, ${name}`,
-    subcopy: "Sabtu, 9 Mei · Cerah 28°C",
-    listen: "Tekan untuk cakap",
-    today: "Hari ini",
-    news: "Berita tempatan",
-    share: "Kongsi pagi",
-    moodPrompt: "Apa khabar hari ini?",
-    moodSaved: "Terima kasih. Saya dah simpan.",
-    moodSaving: "Menyimpan...",
-    moodSaveError: "Tak dapat simpan. Tekan lagi sekali.",
-    reply: "Pagi dah sedia. Saya akan bacakan.",
-    stickers: [
-      { id: "energetic", label: "Bertenaga" },
-      { id: "tired", label: "Penat" },
-      { id: "down", label: "Sedih" },
-      { id: "grateful", label: "Bersyukur" },
-      { id: "confused", label: "Keliru" },
-    ],
-    reminders: [
-      { time: "08:00", title: "Ubat darah tinggi", icon: Pill, status: "Sedia" },
-      { time: "14:00", title: "Temujanji poliklinik", icon: CalendarClock, status: "Nanti" },
-    ],
-    newsItems: [
-      "Baucar CDC kini boleh digunakan di lebih banyak pasar raya berdekatan.",
-      "Laluan pejalan kaki berbumbung baharu dibuka berhampiran MRT Toa Payoh minggu ini.",
-    ],
-  },
-} satisfies Record<"en" | "zh" | "ms", LocalizedCopy>;
+} satisfies Record<"en" | "zh", LocalizedCopy>;
 
 const getMoodStorageKey = (seniorId: string) => {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
@@ -175,8 +147,14 @@ function isChineseReadingLanguage(language: string) {
   return language === "zh" || language === "hokkien" || language === "cantonese";
 }
 
+function normalizeSeniorLanguage(language: string | null | undefined) {
+  if (language === "hokkien") return "cantonese";
+  if (language === "ms") return "en";
+  return language || "en";
+}
+
 export function SeniorClient({ senior }: { senior: SeniorProfile }) {
-  const defaultLang = senior.primary_language || "en";
+  const defaultLang = normalizeSeniorLanguage(senior.primary_language);
   const [language, setLanguage] = useState<string>(defaultLang);
   const [selectedMood, setSelectedMood] = useState<MoodStickerId | null>(null);
   const selectedDesignId = useSyncExternalStore(
@@ -196,11 +174,19 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const [rems, setRems] = useState<ReminderRow[]>([]);
   const [contextReady, setContextReady] = useState(false);
 
-  const content = (copy as any)[language === "ms" ? "ms" : isChineseReadingLanguage(language) ? "zh" : "en"] as LocalizedCopy;
+  const content = copy[isChineseReadingLanguage(language) ? "zh" : "en"];
 
   useEffect(() => {
     async function loadData() {
       if (!senior.id) return;
+      
+      if (senior.id === "demo") {
+        setMeds([{ id: "demo-med-1", name: "Blood pressure medicine", status: "Ready", schedule_times: ["08:00"] }]);
+        setRems([{ id: "demo-rem-1", text: "Polyclinic checkup", remind_at: new Date().toISOString() }]);
+        setContextReady(true);
+        return;
+      }
+
       const [mRes, rRes] = await Promise.all([
         supabase.from("medications").select("*").eq("senior_id", senior.id),
         supabase.from("reminders").select("*").eq("senior_id", senior.id).gte("remind_at", new Date().toISOString().split('T')[0]),
@@ -244,28 +230,47 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   useEffect(() => {
     setPageUrl(window.location.href);
   }, []);
-  const whatsAppShareUrl = useMemo(() => {
-    const origin = pageUrl ? new URL(pageUrl).origin : "http://localhost:3000";
-    const shareImageUrl = imagePath.startsWith("data:") ? pageUrl : new URL(imagePath, origin).toString();
+  const handleShare = async () => {
+    const origin = pageUrl ? new URL(pageUrl).origin : window.location.origin;
+    const shareImageUrl = imagePath.startsWith("data:") ? imagePath : new URL(imagePath, origin).toString();
     const greeting = morningData?.greeting ?? content.greeting(senior.nickname);
-    const lines =
-      isChineseReadingLanguage(language)
-        ? [
-            `${greeting}！`,
-            content.subcopy,
-            "今天的早安图准备好了：",
-            shareImageUrl,
-            pageUrl,
-          ]
-        : [
-            `${greeting}!`,
-            content.subcopy,
-            "Today's good morning card is ready:",
-            shareImageUrl,
-            pageUrl,
-          ];
-    return `https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`;
-  }, [content, imagePath, language, morningData?.greeting, pageUrl, senior.nickname]);
+    
+    const lines = isChineseReadingLanguage(language)
+      ? [
+          `${greeting}！`,
+          content.subcopy,
+          "今天的早安：",
+          pageUrl,
+        ]
+      : [
+          `${greeting}!`,
+          content.subcopy,
+          "Today's good morning:",
+          pageUrl,
+        ];
+    const text = lines.join("\n");
+
+    try {
+      if (navigator.share) {
+        const response = await fetch(shareImageUrl);
+        const blob = await response.blob();
+        const file = new File([blob], 'morning.jpg', { type: blob.type || 'image/jpeg' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            text: text,
+            files: [file],
+          });
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Native file share failed", err);
+    }
+
+    // Fallback
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  };
 
   const handleMorningImageReady = useCallback(() => {
     const savedMood = window.localStorage.getItem(getMoodStorageKey(senior.id)) as MoodStickerId | null;
@@ -441,7 +446,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
             <p className="text-2xl font-extrabold tracking-tight text-amber-800">MorningKaki</p>
           </div>
           <div className="flex rounded-full border border-amber-200 bg-white p-1 shadow-sm">
-            {[senior.primary_language || "en", "en"].filter((v, i, a) => a.indexOf(v) === i).map((item) => (
+            {[defaultLang, "en"].filter((v, i, a) => a.indexOf(v) === i).map((item) => (
               <button
                 key={item}
                 onClick={() => setLanguage(item)}
@@ -450,9 +455,8 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
                 }`}
               >
                 {item === "zh" ? "中" : 
-                 item === "hokkien" ? "福" : 
                  item === "cantonese" ? "粤" : 
-                 item === "ms" ? "MY" : "EN"}
+                 "EN"}
               </button>
             ))}
           </div>
@@ -488,15 +492,13 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
               {isRecording ? "Listening..." : isThinking ? "Thinking..." : content.listen}
             </span>
           </button>
-          <a
-            href={whatsAppShareUrl}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            onClick={handleShare}
             className="flex min-h-24 w-24 flex-col items-center justify-center rounded-[1.75rem] bg-[#25D366] text-white shadow-lg shadow-green-500/20 active:scale-[0.98]"
           >
             <Share2 className="h-8 w-8" />
             <span className="mt-1 text-lg font-bold leading-tight">{content.share}</span>
-          </a>
+          </button>
         </section>
 
         <section className="mt-5 px-4">

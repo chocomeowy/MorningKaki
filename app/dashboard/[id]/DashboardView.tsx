@@ -66,7 +66,7 @@ export function DashboardView({ id }: { id: string }) {
             .single();
             
           if (error) {
-            console.error("Supabase fetch error for id", id, ":", error);
+            console.error(`Supabase fetch error for id ${id}: ${error.message} (Code: ${error.code})`);
             // Fallback to demo if record not found or RLS blocks it
             setSenior({
               nickname: "Ah Gong (Demo)",
@@ -145,9 +145,8 @@ function ProfileRail({ senior, pageUrl }: { senior: any; pageUrl: string }) {
   const magicLink = `${pageUrl}/s/${senior.magic_token}`;
   
   const displayLang = senior.primary_language === "zh" ? "Mandarin" 
-    : senior.primary_language === "hokkien" ? "Hokkien" 
+    : senior.primary_language === "hokkien" ? "Cantonese" 
     : senior.primary_language === "cantonese" ? "Cantonese" 
-    : senior.primary_language === "ms" ? "Malay" 
     : "English";
 
   return (

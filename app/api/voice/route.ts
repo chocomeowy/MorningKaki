@@ -6,6 +6,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "dummy_key_to_bypass_build_error",
 });
 
+const CANTONESE_VOICE_ID = "cHDwXsKG0qHMNLIjOusN";
+const DEFAULT_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
+
 interface VoiceAiOutput {
   reply?: string;
   sentiment_score?: number;
@@ -48,7 +51,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content: `You are a warm, caring companion for an elderly person named ${nickname} in Singapore.
-          They just spoke to you. Write a short, empathetic, conversational response (1-2 sentences) in ${language === 'zh' ? 'Mandarin Chinese' : 'English'}.
+          They just spoke to you. Write a short, empathetic, conversational response (1-2 sentences) in ${getReplyLanguage(language)}.
           Also, analyze their sentiment.
           
           You MUST respond in exact JSON format:
@@ -72,12 +75,12 @@ export async function POST(request: Request) {
     const sentimentScore = aiOutput.sentiment_score || 50;
     const sentimentLabel = aiOutput.sentiment_label || "neutral";
 
-    // 3. Synthesize Voice with ElevenLabs (Adam voice)
+    // 3. Synthesize Voice with ElevenLabs
     let audioBuffer: ArrayBuffer | null = null;
     const elevenLabsKey = process.env.ELEVENLABS_API_KEY;
     
     if (elevenLabsKey) {
-      const voiceId = "pNInz6obpgDQGcFmaJgB"; // Adam voice
+      const voiceId = getVoiceId(language);
       const ttsResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
         method: "POST",
         headers: {
@@ -87,6 +90,12 @@ export async function POST(request: Request) {
         body: JSON.stringify({
           text: replyText,
           model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.35,
+            similarity_boost: 0.75,
+            style: 0.85,
+            use_speaker_boost: true,
+          },
         }),
       });
 
@@ -127,4 +136,25 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
+}
+
+function getReplyLanguage(language: string) {
+  if (language === "zh") return "Mandarin Chinese";
+  if (language === "cantonese" || language === "hokkien") {
+    return "Traditional Chinese with natural Cantonese phrasing";
+  }
+
+  return "English";
+}
+
+function getVoiceId(language: string) {
+  if (language === "cantonese" || language === "hokkien") {
+    return process.env.ELEVENLABS_CANTONESE_VOICE_ID || CANTONESE_VOICE_ID;
+  }
+
+  if (language === "zh") {
+    return process.env.ELEVENLABS_CHINESE_VOICE_ID || process.env.ELEVENLABS_CANTONESE_VOICE_ID || CANTONESE_VOICE_ID;
+  }
+
+  return process.env.ELEVENLABS_ENGLISH_VOICE_ID || DEFAULT_VOICE_ID;
 }

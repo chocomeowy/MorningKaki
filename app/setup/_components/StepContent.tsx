@@ -51,8 +51,7 @@ function ProfileStep({ data, setData }: DataStepProps) {
   const languages = [
     { label: "English", id: "en" },
     { label: "Mandarin", id: "zh" },
-    { label: "Hokkien", id: "hokkien" },
-    { label: "Malay", id: "ms" }
+    { label: "Cantonese", id: "cantonese" },
   ];
 
   return (

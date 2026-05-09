@@ -34,7 +34,7 @@ export const morningDesigns: MorningDesign[] = [
     id: "waterfall-calm",
     name: "Waterfall calm",
     shortName: "Calm",
-    description: "Peaceful waterfall, cool blues, gentle Malay and Chinese greeting options.",
+    description: "Peaceful waterfall, cool blues, gentle Chinese greeting options.",
     promptStyle:
       "Peaceful Singapore senior good morning card with waterfall, cool blue water, flowers, gentle multilingual greeting, calm health reminder, high contrast readable text.",
     previewClassName: "bg-gradient-to-br from-blue-300 via-cyan-100 to-rose-200",
