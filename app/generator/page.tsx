@@ -31,6 +31,10 @@ export default function GeneratorPage() {
     setIsGenerating(true);
     setResult(null);
     try {
+      // First trigger the cron to generate today's images
+      await fetch("/api/cron/morning-images", { method: "GET" });
+      
+      // Then fetch the resulting morning data
       const res = await fetch("/api/morning", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

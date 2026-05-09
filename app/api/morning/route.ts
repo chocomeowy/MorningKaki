@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getMorningDesign } from "@/lib/morning-designs";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+const supabaseServer = createServerSupabaseClient();
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "dummy_key_to_bypass_build_error",
@@ -12,6 +15,9 @@ interface MorningRequest {
   language?: "en" | "zh" | "hokkien" | "cantonese" | "ms";
   weather?: string;
   randomTheme?: boolean;
+  medicines?: string[];
+  reminders?: string[];
+  localNews?: string[];
 }
 
 function getErrorMessage(error: unknown) {
@@ -25,96 +31,99 @@ export async function POST(request: Request) {
     const nickname = body.nickname?.trim() || "Ah Gong";
     const weather = body.weather?.trim() || "sunny";
     const language = body.language || "en";
+    const medicines = normaliseList(body.medicines, "No medicine reminders for this morning.");
+    const reminders = normaliseList(body.reminders, "No appointments or reminders today.");
+    const localNews = normaliseList(body.localNews, "No local news selected today.");
 
     const todayDay = new Date().toLocaleDateString('en-SG', { weekday: 'long', timeZone: 'Asia/Singapore' });
+    const todayDate = new Date().toLocaleDateString("en-SG", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Singapore",
+    });
 
-    // 1. Generate the personalized greeting text using GPT-5-nano
+    // 1. Generate the personalized spoken script using GPT-5-nano
     const chatResponse = await openai.chat.completions.create({
       model: "gpt-5-nano",
       messages: [
         {
           role: "system",
-          content: "You are a warm, caring AI companion for elderly people in Singapore. Speak naturally, kindly, and conversationally. Use a very warm, slightly local Singaporean tone.",
+          content: [
+            "You write spoken scripts for ElevenLabs text-to-speech.",
+            "Audience: Singapore seniors.",
+            "Tone: [enthusiastic], warm, caring, upbeat, local, and respectful.",
+            "Avoid emojis, markdown, bullet points, stage directions, URLs, and hard-to-read symbols.",
+            "Keep it concise enough to read aloud in about 45 to 70 seconds.",
+          ].join(" "),
         },
         {
           role: "user",
-          content: `Write a morning greeting for ${nickname}. It is currently ${todayDay}. The weather today is ${weather}.
-Write it in ${language === 'zh' ? 'Mandarin Chinese' : 'English'}.
-The message should be 3 to 4 sentences. 
-- Say good morning.
-- Mention what day it is today and the weather.
-- Wish them a wonderful day ahead.
-- Casually mention that you have some interesting news for them today.
-Make it sound like a friendly voice message. Do not include emojis, this will be read aloud by text-to-speech.`,
+          content: [
+            `Write one spoken morning script for ${nickname}.`,
+            `Language or dialect: ${getLanguageInstruction(language)}.`,
+            `Today is ${todayDay}, ${todayDate}.`,
+            `Weather: ${weather} in Singapore.`,
+            `Medicine reminders: ${medicines.join("; ")}`,
+            `Appointments and reminders: ${reminders.join("; ")}`,
+            `Local news selected by caregiver: ${localNews.join("; ")}`,
+            "Start the script with the literal delivery cue [enthusiastic].",
+            "Include these parts naturally: good morning greeting, date/day, weather, medicine reminder, appointment/reminder if any, local news summary, and a kind closing wish.",
+            "For Hokkien or Cantonese, write in Chinese text, not English or romanisation, so ElevenLabs can read it with a Chinese-capable voice.",
+          ].join("\n"),
         },
       ],
-      max_completion_tokens: 150,
+      max_completion_tokens: 260,
     });
 
-    const greeting = chatResponse.choices[0].message.content?.trim() || `Good morning, ${nickname}!`;
+    const spokenScript = chatResponse.choices[0].message.content?.trim() || `Good morning, ${nickname}. Today is ${todayDay}, and the weather is ${weather}. Please remember your medicine and have a wonderful day.`;
+    const greeting = getDisplayGreeting(language, nickname);
 
-    // 2. Determine today's rotating theme (cycles every day: blessing → gardens → calm)
-    const dayOfYear = Math.floor(
-      (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86_400_000
-    );
-    const themes = [
-      {
-        name: "blessing",
-        prompt:
-          "Singapore-style good morning blessing card. Soft pink roses in full bloom, delicate gold and pink lotus flowers, warm morning sunlight, doves flying, heart motifs, pastel pink and gold tones, cheerful and auspicious, highly saturated vibrant watercolour photography style, wide landscape format.",
-      },
-      {
-        name: "gardens",
-        prompt:
-          "Singapore good morning card featuring Gardens by the Bay supertrees at sunrise with pink and purple sky, lush tropical greenery, lotus pond reflection, warm golden light, vibrant and colourful digital painting, wide landscape format.",
-      },
-      {
-        name: "calm",
-        prompt:
-          "Serene Singapore good morning card. Calm zen garden with soft morning mist, orchids and tropical flowers, gentle bamboo, warm amber and green tones, birds perched on branches, peaceful elderly-friendly aesthetic, vibrant warm watercolour photography wide landscape format.",
-      },
-    ];
+    // 2. Determine today's theme based on profile design setting
+    const designThemeMap: Record<string, string> = {
+      "heritage-card": "blessing",
+      "garden-collage": "gardens",
+      "waterfall-calm": "calm"
+    };
     
-    // If randomTheme is requested (like from the Demo Generator), pick randomly.
-    // Otherwise, tie it to the day of the year so all seniors get the same theme that morning.
-    const themeIndex = body.randomTheme 
-      ? Math.floor(Math.random() * themes.length)
-      : dayOfYear % 3;
-      
-    const theme = themes[themeIndex];
+    // Default to blessing if not found, but if randomTheme is true (e.g. for demo generator), pick randomly
+    const themeNames = ["blessing", "gardens", "calm"];
+    const theme = body.randomTheme 
+      ? themeNames[Math.floor(Math.random() * themeNames.length)]
+      : designThemeMap[design.id] || "blessing";
 
-    const imagePrompt = `${theme.prompt} No text overlaid. Suitable for a Singapore elderly senior audience. ${design.promptStyle || ""}`;
-    
-    let imageUrl = design.heroImage ?? "/morning_illustration.png";
-    let imageError: string | null = null;
-    
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let imageUrl = `/daily-theme-${theme}.png`; // default fallback
+    let imageSource = "static";
+
     try {
-      const imageResponse = await openai.images.generate({
-        model: "gpt-image-2-2026-04-21",
-        prompt: imagePrompt,
-        n: 1,
-        size: "1536x1024",
-        quality: "low",
-      });
-      const generatedImage = imageResponse.data?.[0];
-      imageUrl = generatedImage?.url ?? imageUrl;
-      if (!generatedImage?.url && generatedImage?.b64_json) {
-        imageUrl = `data:image/png;base64,${generatedImage.b64_json}`;
+      const { data, error } = await supabaseServer
+        .from("daily_images")
+        .select("image_url")
+        .eq("theme", theme)
+        .eq("date_string", todayStr)
+        .single();
+        
+      if (data?.image_url && !error) {
+        imageUrl = data.image_url;
+        imageSource = "database";
       }
-    } catch (imgError: unknown) {
-      imageError = getErrorMessage(imgError);
+    } catch (e) {
+      console.error("Failed to fetch daily image from DB, using fallback", e);
     }
 
     return NextResponse.json({
       greeting,
+      spokenScript,
+      weather,
+      localNews,
+      medicines,
+      reminders,
       imageUrl,
-      theme: theme.name,
-      imageSource: imageUrl.startsWith("http") || imageUrl.startsWith("data:") ? "openai" : "static-fallback",
-      imageError: process.env.NODE_ENV === "production" ? undefined : imageError,
+      theme,
+      imageSource,
       designId: design.id,
-      prompt: imagePrompt,
-      generatedForDate: new Date().toISOString().slice(0, 10),
-      demoMode: false,
+      generatedForDate: todayStr,
     });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
@@ -127,4 +136,29 @@ async function readBody(request: Request): Promise<MorningRequest> {
   } catch {
     return {};
   }
+}
+
+function normaliseList(items: string[] | undefined, fallback: string) {
+  const cleaned = (items ?? []).map((item) => item.trim()).filter(Boolean);
+  return cleaned.length > 0 ? cleaned.slice(0, 4) : [fallback];
+}
+
+function getDisplayGreeting(language: MorningRequest["language"], nickname: string) {
+  if (language === "zh" || language === "hokkien" || language === "cantonese") {
+    return `早上好，${nickname}`;
+  }
+
+  if (language === "ms") {
+    return `Selamat pagi, ${nickname}`;
+  }
+
+  return `Good morning, ${nickname}`;
+}
+
+function getLanguageInstruction(language: MorningRequest["language"]) {
+  if (language === "zh") return "Mandarin Chinese, natural Singapore style";
+  if (language === "hokkien") return "Chinese text, with a warm Singapore Hokkien family tone, but written in Chinese characters for ElevenLabs pronunciation";
+  if (language === "cantonese") return "Chinese text, with a warm Cantonese family tone, but written in Chinese characters for ElevenLabs pronunciation";
+  if (language === "ms") return "Malay as spoken warmly in Singapore";
+  return "English with a gentle Singapore tone";
 }

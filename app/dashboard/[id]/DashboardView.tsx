@@ -66,7 +66,12 @@ export function DashboardView({ id }: { id: string }) {
             .single();
             
           if (error) {
-            console.error("Supabase error:", error);
+            console.error("Supabase fetch error details:", {
+              message: error.message,
+              code: error.code,
+              details: error.details,
+              hint: error.hint
+            });
             // Fallback to demo if record not found or RLS blocks it
             setSenior({
               nickname: "Ah Gong (Demo)",
@@ -74,7 +79,7 @@ export function DashboardView({ id }: { id: string }) {
               magic_token: "demo",
               primary_language: "en",
               morning_time: "07:30",
-              error: error.message
+              error_info: error.message
             });
           } else {
             setSenior(data);
@@ -228,8 +233,8 @@ function TodayPanel({ seniorId }: { seniorId: string }) {
   useEffect(() => {
     async function loadData() {
       if (!seniorId || seniorId === "demo") {
-        setMeds([{ name: "Blood pressure meds", status: "Done", time: "08:10 AM" }]);
-        setRems([{ text: "Polyclinic checkup", remind_at: "2026-05-09T14:00:00" }]);
+        setMeds([{ id: "demo-med-1", name: "Blood pressure meds", status: "Done", time: "08:10 AM" }]);
+        setRems([{ id: "demo-rem-1", text: "Polyclinic checkup", remind_at: "2026-05-09T14:00:00" }]);
         setLoading(false);
         return;
       }

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/morning-images",
+      "schedule": "0 21 * * *"
+    }
+  ]
+}

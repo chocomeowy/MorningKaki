@@ -19,6 +19,7 @@ import {
   type MorningDesign,
 } from "@/lib/morning-designs";
 import { getMoodStickerSrc, type MoodStickerId } from "@/lib/mood-stickers";
+import { supabase } from "@/lib/supabase/client";
 
 interface SeniorProfile {
   id: string;
@@ -29,6 +30,26 @@ interface SeniorProfile {
 interface MorningData {
   greeting: string;
   imageUrl: string;
+  spokenScript?: string;
+  weather?: string;
+  localNews?: string[];
+  medicines?: string[];
+  reminders?: string[];
+}
+
+interface MedicationRow {
+  id: string;
+  name: string;
+  dosage?: string | null;
+  schedule_times?: string[] | null;
+  status?: string | null;
+}
+
+interface ReminderRow {
+  id: string;
+  text: string;
+  remind_at: string;
+  acknowledged_at?: string | null;
 }
 
 interface MoodChoice {
@@ -123,8 +144,8 @@ const getMoodStorageKey = (seniorId: string) => {
 };
 
 export function SeniorClient({ senior }: { senior: SeniorProfile }) {
-  const defaultLang = senior.primary_language === "zh" ? "zh" : "en";
-  const [language, setLanguage] = useState<"en" | "zh">(defaultLang);
+  const defaultLang = senior.primary_language || "en";
+  const [language, setLanguage] = useState<string>(defaultLang);
   const [selectedMood, setSelectedMood] = useState<MoodStickerId | null>(null);
   const selectedDesignId = useSyncExternalStore(
     subscribeToMorningDesign,
@@ -139,8 +160,11 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const [showMoodModal, setShowMoodModal] = useState(false);
   const [isSavingMood, setIsSavingMood] = useState(false);
   const [moodSaveError, setMoodSaveError] = useState(false);
-  const [meds, setMeds] = useState<any[]>([]);
-  const [rems, setRems] = useState<any[]>([]);
+  const [meds, setMeds] = useState<MedicationRow[]>([]);
+  const [rems, setRems] = useState<ReminderRow[]>([]);
+  const [contextReady, setContextReady] = useState(false);
+
+  const content = copy[language === "zh" || language === "hokkien" || language === "cantonese" ? "zh" : "en"];
 
   useEffect(() => {
     async function loadData() {
@@ -149,17 +173,41 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
         supabase.from("medications").select("*").eq("senior_id", senior.id),
         supabase.from("reminders").select("*").eq("senior_id", senior.id).gte("remind_at", new Date().toISOString().split('T')[0]),
       ]);
-      setMeds(mRes.data || []);
-      setRems(rRes.data || []);
+      setMeds((mRes.data ?? []) as MedicationRow[]);
+      setRems((rRes.data ?? []) as ReminderRow[]);
+      setContextReady(true);
     }
     loadData();
   }, [senior.id]);
+
+  const todaysReminders = useMemo(
+    () => rems.filter((reminder) => new Date(reminder.remind_at).toDateString() === new Date().toDateString()),
+    [rems],
+  );
+
+  const medicineSummaries = useMemo(
+    () => meds.map((medicine) => {
+      const time = medicine.schedule_times?.[0]?.substring(0, 5) || "morning";
+      const dosage = medicine.dosage ? `, ${medicine.dosage}` : "";
+      return `${medicine.name}${dosage} at ${time}`;
+    }),
+    [meds],
+  );
+
+  const reminderSummaries = useMemo(
+    () => todaysReminders.map((reminder) => {
+      const time = new Date(reminder.remind_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return `${reminder.text} at ${time}`;
+    }),
+    [todaysReminders],
+  );
+
+  const localNewsSummaries = useMemo(() => content.newsItems, [content.newsItems]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
-  const content = copy[language];
   const imagePath = morningData?.imageUrl ?? design.heroImage ?? "/morning_illustration.png";
   const pageUrl = typeof window === "undefined" ? "" : window.location.href;
   const whatsAppShareUrl = useMemo(() => {
@@ -240,6 +288,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
 
   useEffect(() => {
     async function generateMorning() {
+      if (!contextReady) return;
       setIsGenerating(true);
       try {
         const res = await fetch('/api/morning', {
@@ -249,7 +298,10 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
             nickname: senior.nickname,
             language: language,
             designId: design.id,
-            weather: 'sunny'
+            weather: 'sunny, 28 degrees',
+            medicines: medicineSummaries,
+            reminders: reminderSummaries,
+            localNews: localNewsSummaries,
           })
         });
         if (res.ok) {
@@ -263,17 +315,17 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
       }
     }
     generateMorning();
-  }, [senior.nickname, language, design.id]);
+  }, [senior.nickname, language, design.id, medicineSummaries, reminderSummaries, localNewsSummaries, contextReady]);
 
   useEffect(() => {
-    const greeting = morningData?.greeting;
-    if (greeting && !isGenerating) {
+    const script = morningData?.spokenScript ?? morningData?.greeting;
+    if (script && !isGenerating) {
       async function playGreeting() {
         try {
           const res = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: greeting })
+            body: JSON.stringify({ text: script, language })
           });
           if (res.ok) {
             const blob = await res.blob();
@@ -287,7 +339,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
       }
       playGreeting();
     }
-  }, [morningData?.greeting, isGenerating]);
+  }, [morningData?.spokenScript, morningData?.greeting, isGenerating, language]);
 
   const startRecording = async () => {
     try {
@@ -355,10 +407,9 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
         <header className="flex items-center justify-between px-5 pb-3 pt-4">
           <div>
             <p className="text-2xl font-extrabold tracking-tight text-amber-800">MorningKaki</p>
-            <p className="text-lg font-bold text-slate-500">{content.reply}</p>
           </div>
           <div className="flex rounded-full border border-amber-200 bg-white p-1 shadow-sm">
-            {(["en", "zh"] as const).map((item) => (
+            {[senior.primary_language || "en", "en"].filter((v, i, a) => a.indexOf(v) === i).map((item) => (
               <button
                 key={item}
                 onClick={() => setLanguage(item)}
@@ -366,7 +417,10 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
                   language === item ? "bg-amber-500 text-white" : "text-amber-800"
                 }`}
               >
-                {item === "en" ? "EN" : "中"}
+                {item === "zh" ? "中" : 
+                 item === "hokkien" ? "福" : 
+                 item === "cantonese" ? "粤" : 
+                 item === "ms" ? "MY" : "EN"}
               </button>
             ))}
           </div>
@@ -458,7 +512,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
               </span>
             </div>
           ))}
-          {rems.filter(r => new Date(r.remind_at).toDateString() === new Date().toDateString()).map((r) => (
+          {todaysReminders.map((r) => (
             <div key={r.id} className="flex min-h-20 items-center gap-4 rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-amber-100">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
                 <CalendarClock className="h-6 w-6" />

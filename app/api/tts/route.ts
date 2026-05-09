@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 interface TtsRequest {
   text?: string;
+  language?: string;
 }
 
 function getErrorMessage(error: unknown) {
@@ -10,7 +11,7 @@ function getErrorMessage(error: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const { text } = (await request.json()) as TtsRequest;
+    const { text, language } = (await request.json()) as TtsRequest;
     const elevenLabsKey = process.env.ELEVENLABS_API_KEY;
     
     if (!elevenLabsKey) {
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
     }
 
-    const voiceId = "pNInz6obpgDQGcFmaJgB"; // Adam voice
+    const voiceId = getVoiceId(language);
     const ttsResponse = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
       method: "POST",
       headers: {
@@ -49,4 +50,16 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
+}
+
+function getVoiceId(language: string | undefined) {
+  if (language === "zh" || language === "hokkien" || language === "cantonese") {
+    return process.env.ELEVENLABS_CHINESE_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
+  }
+
+  if (language === "ms") {
+    return process.env.ELEVENLABS_MALAY_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
+  }
+
+  return process.env.ELEVENLABS_ENGLISH_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
 }

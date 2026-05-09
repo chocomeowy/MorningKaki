@@ -49,3 +49,14 @@ ALTER TABLE medications DISABLE ROW LEVEL SECURITY;
 ALTER TABLE reminders DISABLE ROW LEVEL SECURITY;
 ALTER TABLE mood_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE voice_logs DISABLE ROW LEVEL SECURITY;
+
+-- Daily Images cache
+CREATE TABLE IF NOT EXISTS daily_images (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  theme text NOT NULL,
+  date_string text NOT NULL,
+  image_url text NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(theme, date_string)
+);
+ALTER TABLE daily_images DISABLE ROW LEVEL SECURITY;
