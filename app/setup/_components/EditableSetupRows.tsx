@@ -11,6 +11,10 @@ interface RowEditorProps {
   setData: Dispatch<SetStateAction<WizardData>>;
 }
 
+function getSingaporeDateString() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+}
+
 export function MedicationRows({ data, setData }: RowEditorProps) {
   const addMedication = () => {
     setData((p) => ({
@@ -61,7 +65,7 @@ export function ReminderRows({ data, setData }: RowEditorProps) {
   const addReminder = () => {
     setData((p) => ({
       ...p,
-      reminders: [...p.reminders, { id: crypto.randomUUID(), name: "", time: "12:00", location: "Home" }],
+      reminders: [...p.reminders, { id: crypto.randomUUID(), name: "", date: getSingaporeDateString(), time: "12:00", location: "Home" }],
     }));
   };
 
@@ -80,10 +84,14 @@ export function ReminderRows({ data, setData }: RowEditorProps) {
     <>
       <div className="space-y-3">
         {data.reminders.map((rem) => (
-          <div key={rem.id} className="grid gap-3 rounded-3xl border border-purple-100 bg-purple-50 p-4 sm:grid-cols-[1.2fr_0.7fr_1fr_auto]">
+          <div key={rem.id} className="grid gap-3 rounded-3xl border border-purple-100 bg-purple-50 p-4 sm:grid-cols-[1.2fr_0.9fr_0.7fr_1fr_auto]">
             <label>
               <Label>Plan or reminder</Label>
               <input value={rem.name} onChange={(e) => updateReminder(rem.id, { name: e.target.value })} placeholder="Polyclinic checkup" className="h-13 w-full rounded-2xl border border-purple-100 bg-white px-4 text-base font-bold outline-none focus:border-purple-300" />
+            </label>
+            <label>
+              <Label>Date</Label>
+              <input type="date" value={rem.date} onChange={(e) => updateReminder(rem.id, { date: e.target.value })} className="h-13 w-full rounded-2xl border border-purple-100 bg-white px-4 text-base font-bold outline-none focus:border-purple-300" />
             </label>
             <label>
               <Label>Time</Label>

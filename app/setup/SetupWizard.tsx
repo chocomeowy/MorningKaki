@@ -27,6 +27,7 @@ export interface MedicationDraft {
 export interface ReminderDraft {
   id: string;
   name: string;
+  date: string;
   time: string;
   location: string;
 }
@@ -57,6 +58,10 @@ export const WizardContext = createContext<WizardContextValue | null>(null);
 
 const returnPathKey = "morningkaki:return-path";
 
+function getSingaporeDateString() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+}
+
 export function useWizard() {
   return useContext(WizardContext);
 }
@@ -71,7 +76,7 @@ export function SetupWizard() {
     nickname: "Ah Gong",
     language: "en",
     medications: [{ id: "1", name: "Amlodipine 5mg", timing: "Morning after breakfast" }],
-    reminders: [{ id: "1", name: "Polyclinic checkup", time: "14:00", location: "Toa Payoh Polyclinic" }],
+    reminders: [{ id: "1", name: "Polyclinic checkup", date: getSingaporeDateString(), time: "14:00", location: "Toa Payoh Polyclinic" }],
     timings: { morning: "07:30", med: "08:00", quietStart: "21:00", quietEnd: "07:00" },
     magicToken: "",
     isSaving: false
@@ -299,7 +304,7 @@ function WizardFooter({
                     senior_id: savedId,
                     name: med.name.trim(),
                     dosage: "",
-                    schedule_times: [context.data.timings.med],
+                    schedule_times: context.data.timings.med ? [context.data.timings.med] : [],
                   }))
                 );
               }
@@ -312,11 +317,10 @@ function WizardFooter({
               if (remindersToSave.length > 0) {
                 await supabase.from("reminders").insert(
                   remindersToSave.map((rem) => {
-                    const today = new Date().toISOString().split("T")[0];
                     return {
                       senior_id: savedId,
                       text: rem.location.trim() ? `${rem.name.trim()} (${rem.location.trim()})` : rem.name.trim(),
-                      remind_at: `${today}T${rem.time}:00+08:00`,
+                      remind_at: `${rem.date || getSingaporeDateString()}T${rem.time}:00+08:00`,
                       recurring: false,
                     };
                   })

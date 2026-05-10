@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase/client";
 
 export default function GeneratorPage() {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedDesignId, setSelectedDesignId] = useState("heritage-card");
   const [result, setResult] = useState<{
     imageUrl: string;
     greeting: string;
@@ -32,22 +33,22 @@ export default function GeneratorPage() {
     setIsGenerating(true);
     setResult(null);
     try {
-      // First trigger the cron to generate today's images
-      await fetch("/api/cron/morning-images", { method: "GET" });
-
-      const designIds = ["heritage-card", "garden-collage", "waterfall-calm"];
-      const designId = designIds[Math.floor(Math.random() * designIds.length)];
-      const imageRes = await fetch(`/api/morning-image?designId=${designId}`);
+      const imageRes = await fetch("/api/morning-image/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ designId: selectedDesignId }),
+      });
       const imageData = await imageRes.json();
+      if (!imageRes.ok) throw new Error(imageData.error || "Image generation failed");
       
-      // Then fetch the resulting morning data
+      // Then fetch preview morning text for this generated card.
       const res = await fetch("/api/morning", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nickname: "Ah Gong",
           language: "zh",
-          designId,
+          designId: selectedDesignId,
         }),
       });
       const data = await res.json();
@@ -127,21 +128,33 @@ export default function GeneratorPage() {
               </div>
               <h2 className="text-2xl font-bold">Ready to generate</h2>
               <p className="mt-2 max-w-md text-slate-500">
-                Click below to call the AI pipeline. It will determine today's theme and generate a localized greeting.
+                Generate a replacement image for today. The selected theme will update the live senior screen cache.
               </p>
+              <label className="mt-6 block w-full max-w-xs text-left">
+                <span className="mb-2 block text-sm font-bold text-slate-600">Theme to replace</span>
+                <select
+                  value={selectedDesignId}
+                  onChange={(event) => setSelectedDesignId(event.target.value)}
+                  className="h-12 w-full rounded-2xl border border-amber-200 bg-white px-4 font-bold text-slate-800"
+                >
+                  <option value="heritage-card">Blessing card</option>
+                  <option value="garden-collage">Gardens card</option>
+                  <option value="waterfall-calm">Calm waterfall card</option>
+                </select>
+              </label>
               <Button
                 onClick={generateCard}
                 className="mt-8 h-14 rounded-full bg-amber-500 px-8 text-lg font-bold text-white hover:bg-amber-600"
               >
                 <Sparkles className="mr-2 h-5 w-5" />
-                Generate Today's Card
+                Generate and Replace Today's Card
               </Button>
             </div>
           ) : isGenerating ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <Loader2 className="h-12 w-12 animate-spin text-amber-500" />
               <p className="mt-6 text-xl font-bold text-amber-900">Painting the morning...</p>
-              <p className="mt-2 text-slate-500">Generating image and drafting greeting</p>
+              <p className="mt-2 text-slate-500">Generating replacement image and updating the live cache</p>
             </div>
           ) : result ? (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -149,6 +162,9 @@ export default function GeneratorPage() {
                 <Sparkles className="h-4 w-4" />
                 Theme applied: {result.theme}
               </div>
+              <p className="mb-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                This image has replaced today&apos;s live senior screen image for the selected theme.
+              </p>
 
               <div className="relative aspect-[3/2] w-full overflow-hidden rounded-[1.5rem] bg-slate-100 shadow-md">
                 {result.imageUrl ? (

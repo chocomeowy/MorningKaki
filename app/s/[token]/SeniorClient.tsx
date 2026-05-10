@@ -41,7 +41,7 @@ interface MorningImageData {
   imageUrl: string;
   theme: string;
   dateString: string;
-  source: "storage" | "static";
+  source: "storage" | "rotated-cache" | "static";
 }
 
 type NarrationStatus = "idle" | "generatingText" | "generatingAudio" | "playing" | "failed";
@@ -516,6 +516,12 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
       });
 
       if (res.ok) {
+        const contentType = res.headers.get("Content-Type") ?? "";
+        if (contentType.includes("application/json")) {
+          await res.json();
+          return;
+        }
+
         const audioBlob = await res.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
         if (audioPlayerRef.current) {

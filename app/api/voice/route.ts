@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { supabase } from "@/lib/supabase/client";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "dummy_key_to_bypass_build_error",
 });
 
+const voiceBucket = "voice-memories";
 const CANTONESE_VOICE_ID = "cHDwXsKG0qHMNLIjOusN";
 const DEFAULT_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
 
@@ -26,16 +27,34 @@ export async function POST(request: Request) {
     const seniorId = formData.get("seniorId") as string;
     const nickname = formData.get("nickname") as string || "Ah Gong";
     const language = formData.get("language") as string || "en";
-    const confirmWrite = formData.get("confirmWrite") === "true";
+    const shouldPersist = Boolean(seniorId && seniorId !== "demo");
 
     if (!audioFile) {
       return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
     }
 
+    const supabase = createServerSupabaseClient();
+    const recordedAt = new Date();
+    const audioPath = shouldPersist
+      ? `${seniorId}/${recordedAt.toISOString().replace(/[:.]/g, "-")}.webm`
+      : "";
+
+    if (shouldPersist) {
+      await ensureVoiceBucket(supabase);
+      const { error: uploadError } = await supabase.storage
+        .from(voiceBucket)
+        .upload(audioPath, audioFile, {
+          contentType: audioFile.type || "audio/webm",
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+    }
+
     // 1. Transcribe audio using Whisper
     const transcription = await openai.audio.transcriptions.create({
       file: audioFile,
-      model: "gpt-realtime-whisper",
+      model: "whisper-1",
     });
 
     const transcript = transcription.text;
@@ -105,13 +124,14 @@ export async function POST(request: Request) {
     }
 
     // 4. Save the log to Supabase
-    if (seniorId) {
+    if (shouldPersist) {
       await supabase.from("voice_logs").insert({
         senior_id: seniorId,
         transcript: transcript,
         sentiment_label: sentimentLabel,
         sentiment_score: sentimentScore,
-        timestamp: new Date().toISOString(),
+        audio_url: audioPath,
+        timestamp: recordedAt.toISOString(),
       });
     }
 
@@ -135,6 +155,21 @@ export async function POST(request: Request) {
 
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+  }
+}
+
+async function ensureVoiceBucket(supabase: ReturnType<typeof createServerSupabaseClient>) {
+  const { error } = await supabase.storage.getBucket(voiceBucket);
+  if (!error) return;
+
+  const { error: createError } = await supabase.storage.createBucket(voiceBucket, {
+    public: false,
+    fileSizeLimit: "25MB",
+    allowedMimeTypes: ["audio/webm", "audio/mp4", "audio/mpeg", "audio/wav", "audio/ogg"],
+  });
+
+  if (createError && createError.message !== "The resource already exists") {
+    throw createError;
   }
 }
 

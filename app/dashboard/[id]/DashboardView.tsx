@@ -32,26 +32,25 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const trendData = [
-  { day: "Mon", mood: 82, meds: 100 },
-  { day: "Tue", mood: 86, meds: 100 },
-  { day: "Wed", mood: 70, meds: 50 },
-  { day: "Thu", mood: 89, meds: 100 },
-  { day: "Fri", mood: 76, meds: 100 },
-  { day: "Sat", mood: 94, meds: 100 },
-  { day: "Sun", mood: 88, meds: 100 },
-];
-
-const memories = [
-  { date: "Today", mood: "😊", text: "I met Uncle Tan at the Kopitiam after breakfast.", time: "0:45" },
-  { date: "Yesterday", mood: "😴", text: "The weather was very hot, so I stayed home.", time: "1:12" },
-  { date: "Monday", mood: "❤️", text: "My grandson came to visit after school.", time: "2:05" },
-];
-
 const returnPathKey = "morningkaki:return-path";
+
+interface VoiceLog {
+  id: string;
+  transcript: string;
+  sentimentLabel: string;
+  sentimentScore: number;
+  timestamp: string | null;
+  audioUrl: string | null;
+}
+
+interface MoodLog {
+  sticker_type: string;
+  timestamp: string | null;
+}
 
 export function DashboardView({ id }: { id: string }) {
   const [senior, setSenior] = useState<any>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   
   const pageUrl = useMemo(() => {
     return typeof window !== "undefined" ? window.location.origin : "https://morningkaki.vercel.app";
@@ -64,7 +63,7 @@ export function DashboardView({ id }: { id: string }) {
 
   useEffect(() => {
     async function loadSenior() {
-      if (id && id !== 'demo' && id !== '[id]') {
+      if (id && id !== "demo" && id !== "[id]") {
         try {
           const { data, error } = await supabase
             .from("seniors")
@@ -73,30 +72,15 @@ export function DashboardView({ id }: { id: string }) {
             .single();
             
           if (error) {
-            console.error(`Supabase fetch error for id ${id}: ${error.message} (Code: ${error.code})`);
-            // Fallback to demo if record not found or RLS blocks it
-            setSenior({
-              nickname: "Ah Gong (Demo)",
-              full_name: "Lim Chee Seng",
-              magic_token: "demo",
-              primary_language: "en",
-              morning_time: "07:30",
-              error_info: error.message
-            });
+            setLoadError(error.message);
           } else {
             setSenior(data);
           }
         } catch (err) {
-          console.error("Failed to fetch senior:", err);
+          setLoadError(err instanceof Error ? err.message : "Failed to load dashboard");
         }
       } else {
-        setSenior({
-          nickname: "Ah Gong",
-          full_name: "Lim Chee Seng",
-          magic_token: "demo",
-          primary_language: "en",
-          morning_time: "07:30",
-        });
+        setLoadError("No senior profile selected yet.");
       }
     }
     loadSenior();
@@ -105,7 +89,14 @@ export function DashboardView({ id }: { id: string }) {
   if (!senior) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f7f4ee]">
-        <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+        {loadError ? (
+          <section className="mx-4 max-w-md rounded-[2rem] bg-white p-6 text-center shadow-sm ring-1 ring-slate-200">
+            <h1 className="text-2xl font-extrabold">No live dashboard found</h1>
+            <p className="mt-3 text-slate-600">{loadError}</p>
+          </section>
+        ) : (
+          <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+        )}
       </div>
     );
   }
@@ -116,7 +107,7 @@ export function DashboardView({ id }: { id: string }) {
         <ProfileRail senior={senior} pageUrl={pageUrl} />
         <section className="space-y-5">
           <DashboardHeader />
-          <StatusGrid />
+          <StatusGrid seniorId={senior.id} />
           <Tabs defaultValue="today" className="space-y-5">
             <TabsList className="grid h-12 w-full grid-cols-4 rounded-2xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
               {["today", "trends", "memories", "manage"].map((item) => (
@@ -133,10 +124,10 @@ export function DashboardView({ id }: { id: string }) {
               <TodayPanel seniorId={senior.id} />
             </TabsContent>
             <TabsContent value="trends" className="space-y-5">
-              <TrendsPanel />
+              <TrendsPanel seniorId={senior.id} />
             </TabsContent>
             <TabsContent value="memories" className="space-y-5">
-              <MemoriesPanel />
+              <MemoriesPanel seniorId={senior.id || id} />
             </TabsContent>
             <TabsContent value="manage" className="space-y-5">
               <ManagePanel senior={senior} setSenior={setSenior} />
@@ -209,19 +200,55 @@ function DashboardHeader() {
       </div>
       <Badge className="h-9 bg-emerald-50 px-3 text-sm font-extrabold text-emerald-700">
         <CheckCircle2 className="mr-1 h-4 w-4" />
-        All clear
+        Live view
       </Badge>
     </header>
   );
 }
 
-function StatusGrid() {
+function StatusGrid({ seniorId }: { seniorId: string }) {
+  const [mood, setMood] = useState<MoodLog | null>(null);
+  const [medCount, setMedCount] = useState(0);
+  const [reminderCount, setReminderCount] = useState(0);
+  const [acknowledgedCount, setAcknowledgedCount] = useState(0);
+  const [voiceLogs, setVoiceLogs] = useState<VoiceLog[]>([]);
+
+  useEffect(() => {
+    async function loadMetrics() {
+      const today = new Date().toISOString().split("T")[0];
+      const [moodRes, medRes, remRes, voiceRes] = await Promise.all([
+        supabase
+          .from("mood_logs")
+          .select("sticker_type, timestamp")
+          .eq("senior_id", seniorId)
+          .gte("timestamp", `${today}T00:00:00+08:00`)
+          .order("timestamp", { ascending: false })
+          .limit(1),
+        supabase.from("medications").select("id").eq("senior_id", seniorId),
+        supabase.from("reminders").select("id, acknowledged_at").eq("senior_id", seniorId),
+        fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`),
+      ]);
+      const voiceData = await voiceRes.json();
+
+      setMood((moodRes.data?.[0] as MoodLog | undefined) ?? null);
+      setMedCount(medRes.data?.length ?? 0);
+      setReminderCount(remRes.data?.length ?? 0);
+      setAcknowledgedCount(remRes.data?.filter((item) => item.acknowledged_at).length ?? 0);
+      setVoiceLogs(voiceData.logs ?? []);
+    }
+
+    loadMetrics();
+  }, [seniorId]);
+
+  const latestVoice = voiceLogs[0];
+
   return (
-    <div className="grid gap-3 md:grid-cols-4">
-      <Metric icon={HeartPulse} label="Mood" value="Energetic 😊" tone="rose" />
-      <Metric icon={Pill} label="Medication" value="1 of 2 done" tone="blue" />
-      <Metric icon={TrendingUp} label="Sentiment" value="88 / 100" tone="amber" />
-      <Metric icon={Mic} label="Voice logs" value="3 saved" tone="emerald" />
+    <div className="grid gap-3 md:grid-cols-5">
+      <Metric icon={HeartPulse} label="Mood" value={mood ? formatMood(mood.sticker_type) : "Not checked in"} tone="rose" />
+      <Metric icon={Pill} label="Medication" value={`${medCount} active`} tone="blue" />
+      <Metric icon={TrendingUp} label="Sentiment" value={latestVoice ? `${latestVoice.sentimentScore} / 100` : "No voice yet"} tone="amber" />
+      <Metric icon={Mic} label="Voice logs" value={`${voiceLogs.length} saved`} tone="emerald" />
+      <Metric icon={CalendarClock} label="Reminders" value={`${acknowledgedCount} of ${reminderCount} done`} tone="blue" />
     </div>
   );
 }
@@ -229,37 +256,45 @@ function StatusGrid() {
 function TodayPanel({ seniorId }: { seniorId: string }) {
   const [meds, setMeds] = useState<any[]>([]);
   const [rems, setRems] = useState<any[]>([]);
+  const [voiceLogs, setVoiceLogs] = useState<VoiceLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
-      if (!seniorId || seniorId === "demo") {
-        setMeds([{ id: "demo-med-1", name: "Blood pressure meds", status: "Done", time: "08:10 AM" }]);
-        setRems([{ id: "demo-rem-1", text: "Polyclinic checkup", remind_at: "2026-05-09T14:00:00" }]);
-        setLoading(false);
-        return;
-      }
-      const [mRes, rRes] = await Promise.all([
+      const [mRes, rRes, voiceRes] = await Promise.all([
         supabase.from("medications").select("*").eq("senior_id", seniorId),
         supabase.from("reminders").select("*").eq("senior_id", seniorId).gte("remind_at", new Date().toISOString().split('T')[0]),
+        fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`),
       ]);
+      const voiceData = await voiceRes.json();
       setMeds(mRes.data || []);
       setRems(rRes.data || []);
+      setVoiceLogs(voiceData.logs ?? []);
       setLoading(false);
     }
     loadData();
   }, [seniorId]);
 
   if (loading) return <div className="p-10 text-center"><Loader2 className="mx-auto animate-spin" /></div>;
+  const latestVoice = voiceLogs[0];
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_22rem]">
       <section className="rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <PanelTitle icon={Mic} title="Conversation summary" />
         <p className="mt-4 text-lg leading-relaxed text-slate-700">
-          Ah Gong said he slept well and plans to meet Uncle Tan for kopi after breakfast.
-          He took his morning blood pressure medicine without prompting.
+          {latestVoice?.transcript || "No voice check-in yet today."}
         </p>
+        {latestVoice ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Badge className="bg-amber-50 text-amber-700">
+              Sentiment: {latestVoice.sentimentLabel}
+            </Badge>
+            <Badge className="bg-blue-50 text-blue-700">
+              Score: {latestVoice.sentimentScore} / 100
+            </Badge>
+          </div>
+        ) : null}
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           {meds.map(m => (
             <ReminderCard key={m.id} icon={Pill} title={m.name} meta={`Dosage: ${m.dosage || 'Standard'}`} done={m.status === 'Done'} />
@@ -272,9 +307,9 @@ function TodayPanel({ seniorId }: { seniorId: string }) {
       </section>
       <section className="rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <PanelTitle icon={AlertTriangle} title="Alerts" />
-        <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-800">
-          <p className="font-extrabold">No action needed</p>
-          <p className="mt-1 text-sm font-medium">Mood and adherence look stable today.</p>
+        <div className={`mt-4 rounded-2xl p-4 ${getAlertTone(latestVoice).className}`}>
+          <p className="font-extrabold">{getAlertTone(latestVoice).title}</p>
+          <p className="mt-1 text-sm font-medium">{getAlertTone(latestVoice).body}</p>
         </div>
       </section>
     </div>
@@ -342,42 +377,105 @@ function ManagePanel({ senior, setSenior }: { senior: any; setSenior: (s: any) =
   );
 }
 
-function TrendsPanel() {
+function TrendsPanel({ seniorId }: { seniorId: string }) {
+  const [sentimentData, setSentimentData] = useState<{ day: string; score: number }[]>([]);
+  const [reminderData, setReminderData] = useState<{ day: string; adherence: number }[]>([]);
+
+  useEffect(() => {
+    async function loadTrends() {
+      const [voiceRes, remRes] = await Promise.all([
+        fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`),
+        supabase
+          .from("reminders")
+          .select("remind_at, acknowledged_at")
+          .eq("senior_id", seniorId)
+          .order("remind_at", { ascending: true }),
+      ]);
+      const voiceData = await voiceRes.json();
+      const voiceLogs = (voiceData.logs ?? []) as VoiceLog[];
+
+      setSentimentData(
+        voiceLogs
+          .filter((log) => log.timestamp)
+          .slice(0, 7)
+          .reverse()
+          .map((log) => ({
+            day: formatShortDate(log.timestamp),
+            score: log.sentimentScore,
+          })),
+      );
+
+      const grouped = new Map<string, { total: number; done: number }>();
+      (remRes.data ?? []).forEach((reminder) => {
+        const day = formatShortDate(reminder.remind_at);
+        const current = grouped.get(day) ?? { total: 0, done: 0 };
+        grouped.set(day, {
+          total: current.total + 1,
+          done: current.done + (reminder.acknowledged_at ? 1 : 0),
+        });
+      });
+      setReminderData(
+        Array.from(grouped.entries()).map(([day, value]) => ({
+          day,
+          adherence: value.total > 0 ? Math.round((value.done / value.total) * 100) : 0,
+        })),
+      );
+    }
+
+    loadTrends();
+  }, [seniorId]);
+
   return (
     <div className="grid gap-5 xl:grid-cols-2">
       <ChartPanel title="Sentiment score">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={trendData}>
-            <CartesianGrid stroke="#e2e8f0" vertical={false} />
-            <XAxis dataKey="day" axisLine={false} tickLine={false} />
-            <YAxis domain={[0, 100]} axisLine={false} tickLine={false} />
-            <Tooltip />
-            <Line
-              type="monotone"
-              dataKey="mood"
-              stroke="#f59e0b"
-              strokeWidth={4}
-              dot={{ fill: "#f59e0b", r: 4, stroke: "#fff", strokeWidth: 2 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        {sentimentData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={sentimentData}>
+              <CartesianGrid stroke="#e2e8f0" vertical={false} />
+              <XAxis dataKey="day" axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 100]} axisLine={false} tickLine={false} />
+              <Tooltip />
+              <Line type="monotone" dataKey="score" stroke="#f59e0b" strokeWidth={4} dot={{ fill: "#f59e0b", r: 4, stroke: "#fff", strokeWidth: 2 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyChartText text="No voice sentiment yet." />
+        )}
       </ChartPanel>
-      <ChartPanel title="Medication adherence">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={trendData}>
-            <CartesianGrid stroke="#e2e8f0" vertical={false} />
-            <XAxis dataKey="day" axisLine={false} tickLine={false} />
-            <YAxis domain={[0, 100]} axisLine={false} tickLine={false} />
-            <Tooltip />
-            <Bar dataKey="meds" fill="#2563eb" radius={[8, 8, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+      <ChartPanel title="Reminder adherence">
+        {reminderData.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={reminderData}>
+              <CartesianGrid stroke="#e2e8f0" vertical={false} />
+              <XAxis dataKey="day" axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 100]} axisLine={false} tickLine={false} />
+              <Tooltip />
+              <Bar dataKey="adherence" fill="#2563eb" radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyChartText text="No acknowledged reminders yet." />
+        )}
       </ChartPanel>
     </div>
   );
 }
 
-function MemoriesPanel() {
+function MemoriesPanel({ seniorId }: { seniorId: string }) {
+  const [voiceLogs, setVoiceLogs] = useState<VoiceLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadVoiceLogs() {
+      const response = await fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`);
+      const data = await response.json();
+      setVoiceLogs(data.logs ?? []);
+      setLoading(false);
+    }
+
+    loadVoiceLogs();
+  }, [seniorId]);
+
   return (
     <section className="rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -385,20 +483,103 @@ function MemoriesPanel() {
         <Badge className="bg-purple-50 text-purple-700">Voice Clone · Coming Soon</Badge>
       </div>
       <div className="divide-y divide-slate-100">
-        {memories.map((item) => (
-          <div key={item.date} className="flex items-center gap-4 py-4">
-            <button className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-800">
+        {loading ? (
+          <div className="py-8 text-center text-slate-500">
+            <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+          </div>
+        ) : null}
+        {!loading && voiceLogs.length === 0 ? (
+          <p className="py-8 text-center font-medium text-slate-500">No voice memories saved yet.</p>
+        ) : null}
+        {voiceLogs.map((item) => (
+          <div key={item.id} className="flex items-center gap-4 py-4">
+            <button
+              disabled={!item.audioUrl}
+              onClick={() => item.audioUrl ? new Audio(item.audioUrl).play() : undefined}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-800 disabled:opacity-40"
+            >
               <Play className="ml-1 h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="font-extrabold">{item.date} {item.mood}</p>
-              <p className="truncate text-sm font-medium text-slate-500">{item.text}</p>
+              <p className="font-extrabold">
+                {formatVoiceDate(item.timestamp)} · {item.sentimentLabel} ({item.sentimentScore}/100)
+              </p>
+              <p className="truncate text-sm font-medium text-slate-500">{item.transcript}</p>
             </div>
-            <span className="text-sm font-bold text-slate-400">{item.time}</span>
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+function formatVoiceDate(timestamp: string | null) {
+  if (!timestamp) return "Saved voice";
+  return new Date(timestamp).toLocaleDateString("en-SG", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatShortDate(timestamp: string | null) {
+  if (!timestamp) return "Unknown";
+  return new Date(timestamp).toLocaleDateString("en-SG", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function formatMood(stickerType: string) {
+  const labels: Record<string, string> = {
+    energetic: "Energetic",
+    tired: "Tired",
+    down: "Feeling down",
+    grateful: "Grateful",
+    confused: "Confused",
+  };
+
+  return labels[stickerType] ?? stickerType;
+}
+
+function getAlertTone(latestVoice: VoiceLog | undefined) {
+  if (!latestVoice) {
+    return {
+      className: "bg-slate-50 text-slate-700",
+      title: "No voice check-in yet",
+      body: "The dashboard will update after the senior records a message.",
+    };
+  }
+
+  if (latestVoice.sentimentLabel === "distressed" || latestVoice.sentimentScore < 35) {
+    return {
+      className: "bg-red-50 text-red-800",
+      title: "Please check in",
+      body: "The latest voice sentiment looks distressed.",
+    };
+  }
+
+  if (latestVoice.sentimentLabel === "low" || latestVoice.sentimentScore < 55) {
+    return {
+      className: "bg-amber-50 text-amber-800",
+      title: "Watch gently",
+      body: "The latest voice sentiment is lower than usual.",
+    };
+  }
+
+  return {
+    className: "bg-emerald-50 text-emerald-800",
+    title: "No urgent alert",
+    body: "The latest voice check-in does not show distress.",
+  };
+}
+
+function EmptyChartText({ text }: { text: string }) {
+  return (
+    <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 text-center font-medium text-slate-500">
+      {text}
+    </div>
   );
 }
 

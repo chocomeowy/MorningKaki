@@ -10,8 +10,10 @@ import {
   Languages,
   MessageCircle,
   Pill,
+  Plus,
   ScanLine,
   ShieldCheck,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BackgroundDesignPicker } from "./BackgroundDesignPicker";
@@ -24,9 +26,7 @@ import {
   Field,
   Label,
   StepShell,
-  TimeBox,
   TrustStrip,
-  UploadTile,
 } from "./StepPrimitives";
 
 export function StepContent({ step }: { step: number }) {
@@ -36,7 +36,7 @@ export function StepContent({ step }: { step: number }) {
   if (step === 0) return <ProfileStep data={context.data} setData={context.setData} />;
   if (step === 1) return <MedicationStep data={context.data} setData={context.setData} />;
   if (step === 2) return <ReminderStep data={context.data} setData={context.setData} />;
-  if (step === 3) return <TimingStep />;
+  if (step === 3) return <TimingStep data={context.data} setData={context.setData} />;
   return <ShareStep data={context.data} />;
 }
 
@@ -62,22 +62,19 @@ function ProfileStep({ data, setData }: DataStepProps) {
         <Field label="Full name" value={data.fullName} onChange={(e) => setData((p) => ({ ...p, fullName: e.target.value }))} />
         <Field label="Preferred nickname" value={data.nickname} onChange={(e) => setData((p) => ({ ...p, nickname: e.target.value }))} />
       </div>
-      <div className="grid gap-4 sm:grid-cols-[1fr_1.25fr]">
-        <UploadTile />
-        <div>
-          <Label>Primary language</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {languages.map((item) => (
-              <button 
-                key={item.id}
-                onClick={() => setData((p) => ({ ...p, language: item.id }))}
-                className={`flex min-h-12 items-center gap-2 rounded-2xl border px-3 text-left font-bold ${data.language === item.id ? "border-amber-300 bg-amber-100 text-amber-950" : "border-slate-200 bg-white text-slate-600"}`}
-              >
-                <Languages className="h-4 w-4" />
-                {item.label}
-              </button>
-            ))}
-          </div>
+      <div>
+        <Label>Primary language</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {languages.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setData((p) => ({ ...p, language: item.id }))}
+              className={`flex min-h-12 items-center gap-2 rounded-2xl border px-3 text-left font-bold ${data.language === item.id ? "border-amber-300 bg-amber-100 text-amber-950" : "border-slate-200 bg-white text-slate-600"}`}
+            >
+              <Languages className="h-4 w-4" />
+              {item.label}
+            </button>
+          ))}
         </div>
       </div>
       <BackgroundDesignPicker />
@@ -134,7 +131,11 @@ function ReminderStep({ data, setData }: DataStepProps) {
   );
 }
 
-function TimingStep() {
+function TimingStep({ data, setData }: DataStepProps) {
+  const updateTiming = (key: keyof WizardData["timings"], value: string) => {
+    setData((p) => ({ ...p, timings: { ...p.timings, [key]: value } }));
+  };
+
   return (
     <StepShell
       eyebrow="Step 4"
@@ -142,8 +143,32 @@ function TimingStep() {
       description="Default timings are already sensible for the demo, with quiet hours clearly visible."
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <TimeBox label="Morning greeting" value="07:30" icon={Bell} />
-        <TimeBox label="Medication reminder" value="08:00" icon={Pill} />
+        <label className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-3 flex items-center gap-2 font-bold">
+            <Bell className="h-5 w-5 text-amber-600" />
+            Morning greeting
+          </div>
+          <input type="time" value={data.timings.morning} onChange={(e) => updateTiming("morning", e.target.value)} className="h-13 w-full rounded-2xl border border-slate-200 bg-white px-4 text-lg font-bold" />
+        </label>
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-3 flex items-center gap-2 font-bold">
+            <Pill className="h-5 w-5 text-amber-600" />
+            Medication reminder
+          </div>
+          {data.timings.med ? (
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <input type="time" value={data.timings.med} onChange={(e) => updateTiming("med", e.target.value)} className="h-13 rounded-2xl border border-slate-200 bg-white px-4 text-lg font-bold" />
+              <button type="button" onClick={() => updateTiming("med", "")} aria-label="Remove medication reminder time" className="flex h-13 items-center justify-center rounded-2xl border border-red-100 bg-white px-4 text-red-600 hover:bg-red-50">
+                <Trash2 className="h-5 w-5" />
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => updateTiming("med", "08:00")} className="flex h-13 w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white px-4 text-base font-bold text-slate-700">
+              <Plus className="h-5 w-5" />
+              Add medication reminder time
+            </button>
+          )}
+        </div>
       </div>
       <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
         <div className="flex items-center gap-3">
@@ -151,9 +176,9 @@ function TimingStep() {
           <p className="font-bold">Quiet hours</p>
         </div>
         <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <input type="time" defaultValue="21:00" className="h-13 rounded-2xl border border-slate-200 bg-white px-4 text-lg font-bold" />
+          <input type="time" value={data.timings.quietStart} onChange={(e) => updateTiming("quietStart", e.target.value)} className="h-13 rounded-2xl border border-slate-200 bg-white px-4 text-lg font-bold" />
           <span className="text-slate-400">to</span>
-          <input type="time" defaultValue="07:00" className="h-13 rounded-2xl border border-slate-200 bg-white px-4 text-lg font-bold" />
+          <input type="time" value={data.timings.quietEnd} onChange={(e) => updateTiming("quietEnd", e.target.value)} className="h-13 rounded-2xl border border-slate-200 bg-white px-4 text-lg font-bold" />
         </div>
       </div>
       <Choice active icon={ShieldCheck}>
@@ -191,7 +216,7 @@ function ShareStep({ data }: { data: WizardData }) {
               {finalLink}
             </div>
             <Button onClick={() => {
-              const msg = `Mum, tap this link and add it to your home screen. I'll send you a good morning every day. ❤️ ${finalLink}`;
+              const msg = `Mum, tap this link and add it to your home screen. I'll send you a good morning every day. ${finalLink}`;
               window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
             }} className="h-14 w-full rounded-2xl bg-[#25D366] text-base font-bold text-white hover:bg-[#20bd5a]">
               <MessageCircle className="h-5 w-5" />

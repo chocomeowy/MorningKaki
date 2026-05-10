@@ -50,7 +50,8 @@ ALTER TABLE reminders DISABLE ROW LEVEL SECURITY;
 ALTER TABLE mood_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE voice_logs DISABLE ROW LEVEL SECURITY;
 
--- Daily Images cache
+-- Daily Images cache. Rows are kept by date so the app can rotate older
+-- generated images when credits run out or today's generation fails.
 CREATE TABLE IF NOT EXISTS daily_images (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   theme text NOT NULL,

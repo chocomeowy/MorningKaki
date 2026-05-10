@@ -14,19 +14,39 @@ export async function GET(request: Request) {
 
   try {
     const supabase = createServerSupabaseClient();
-    const { data, error } = await supabase
+    const { data: todayImage, error } = await supabase
       .from("daily_images")
-      .select("image_url")
+      .select("image_url, date_string")
       .eq("theme", theme.name)
       .eq("date_string", dateString)
       .single();
 
-    if (data?.image_url && !error) {
+    if (todayImage?.image_url && !error) {
       return NextResponse.json({
-        imageUrl: data.image_url,
+        imageUrl: todayImage.image_url,
         theme: theme.name,
         dateString,
+        cacheDateString: todayImage.date_string,
         source: "storage",
+      });
+    }
+
+    const { data: cachedImages } = await supabase
+      .from("daily_images")
+      .select("image_url, date_string")
+      .eq("theme", theme.name)
+      .order("date_string", { ascending: true });
+
+    const reusableImages = (cachedImages ?? []).filter((item) => item.image_url);
+
+    if (reusableImages.length > 0) {
+      const rotatedImage = reusableImages[getRotationIndex(dateString, reusableImages.length)];
+      return NextResponse.json({
+        imageUrl: rotatedImage.image_url,
+        theme: theme.name,
+        dateString,
+        cacheDateString: rotatedImage.date_string,
+        source: "rotated-cache",
       });
     }
   } catch {
@@ -37,6 +57,12 @@ export async function GET(request: Request) {
     imageUrl: theme.fallbackImage,
     theme: theme.name,
     dateString,
+    cacheDateString: null,
     source: "static",
   });
+}
+
+function getRotationIndex(dateString: string, imageCount: number) {
+  const dayOfMonth = Number(dateString.split("-")[2] ?? "1");
+  return Math.max(dayOfMonth - 1, 0) % imageCount;
 }
