@@ -272,7 +272,7 @@ function WizardFooter({
             let savedId = context.data.seniorId;
             
             if (savedId) {
-              await supabase.from("seniors").update({
+              const { error } = await supabase.from("seniors").update({
                 nickname: context.data.nickname,
                 full_name: context.data.fullName,
                 primary_language: context.data.language,
@@ -280,6 +280,12 @@ function WizardFooter({
                 quiet_start: context.data.timings.quietStart,
                 quiet_end: context.data.timings.quietEnd,
               }).eq("id", savedId);
+
+              if (error) {
+                context.setData((prev) => ({ ...prev, isSaving: false }));
+                window.alert(error.message);
+                return;
+              }
             } else {
               const { data, error } = await supabase.from("seniors").insert({
                 nickname: context.data.nickname,
@@ -291,7 +297,13 @@ function WizardFooter({
                 quiet_end: context.data.timings.quietEnd,
               }).select("id").single();
               
-              if (!error && data) savedId = data.id;
+              if (error || !data) {
+                context.setData((prev) => ({ ...prev, isSaving: false }));
+                window.alert(error?.message || "Could not create the senior profile. Please try again.");
+                return;
+              }
+
+              savedId = data.id;
             }
 
             // Save medications (replace all for this senior)

@@ -9,7 +9,7 @@ const returnPathKey = "morningkaki:return-path";
 function isSafeReturnPath(path: string | null) {
   if (!path) return false;
   if (path === "/s/demo" || path === "/dashboard/demo") return false;
-  return path === "/dashboard" || path.startsWith("/dashboard/") || path.startsWith("/s/");
+  return path.startsWith("/dashboard/") || path.startsWith("/s/");
 }
 
 export default function Home() {

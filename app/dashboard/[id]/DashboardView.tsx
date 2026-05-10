@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
 import {
@@ -57,26 +58,28 @@ export function DashboardView({ id }: { id: string }) {
   }, []);
 
   useEffect(() => {
-    const dashboardPath = id && id !== "demo" && id !== "[id]" ? `/dashboard/${id}` : "/dashboard";
-    window.localStorage.setItem(returnPathKey, dashboardPath);
-  }, [id]);
-
-  useEffect(() => {
     async function loadSenior() {
       if (id && id !== "demo" && id !== "[id]") {
+        setLoadError(null);
         try {
           const { data, error } = await supabase
             .from("seniors")
             .select("*")
             .eq("id", id)
-            .single();
+            .maybeSingle();
             
           if (error) {
+            window.localStorage.removeItem(returnPathKey);
             setLoadError(error.message);
+          } else if (!data) {
+            window.localStorage.removeItem(returnPathKey);
+            setLoadError("This dashboard link no longer matches a saved senior profile.");
           } else {
             setSenior(data);
+            window.localStorage.setItem(returnPathKey, `/dashboard/${data.id}`);
           }
         } catch (err) {
+          window.localStorage.removeItem(returnPathKey);
           setLoadError(err instanceof Error ? err.message : "Failed to load dashboard");
         }
       } else {
@@ -93,6 +96,9 @@ export function DashboardView({ id }: { id: string }) {
           <section className="mx-4 max-w-md rounded-[2rem] bg-white p-6 text-center shadow-sm ring-1 ring-slate-200">
             <h1 className="text-2xl font-extrabold">No live dashboard found</h1>
             <p className="mt-3 text-slate-600">{loadError}</p>
+            <Link href="/setup" className="mt-5 inline-flex rounded-2xl bg-amber-500 px-5 py-3 font-bold text-white hover:bg-amber-600">
+              Start setup
+            </Link>
           </section>
         ) : (
           <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
