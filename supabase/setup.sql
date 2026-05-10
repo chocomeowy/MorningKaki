@@ -56,7 +56,9 @@ CREATE TABLE IF NOT EXISTS daily_images (
   theme text NOT NULL,
   date_string text NOT NULL,
   image_url text NOT NULL,
+  storage_path text,
   created_at timestamptz DEFAULT now(),
   UNIQUE(theme, date_string)
 );
+ALTER TABLE daily_images ADD COLUMN IF NOT EXISTS storage_path text;
 ALTER TABLE daily_images DISABLE ROW LEVEL SECURITY;

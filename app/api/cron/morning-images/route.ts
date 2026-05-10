@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import {
+  getSingaporeDateString,
+  getStoragePath,
+  morningImageBucket,
+  morningImageThemes,
+} from "@/lib/morning-image-cache";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const supabaseServer = createServerSupabaseClient();
@@ -8,21 +14,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "dummy_key_to_bypass_build_error",
 });
 
-const themes = [
-  {
-    name: "blessing",
-    prompt: "Soft watercolour illustration, warm pastel colours, Singapore context, morning sunrise, blooming pink lotus and orchids, doves flying, cosy and cheerful, suitable for elderly audience. Include the words 'Good Morning' and '早安' in beautiful, large, readable golden calligraphy.",
-  },
-  {
-    name: "gardens",
-    prompt: "Soft watercolour illustration, warm pastel colours, Singapore context, Gardens by the Bay supertrees at morning sunrise, lush greenery, cosy and cheerful, suitable for elderly audience. Include the words 'Good Morning' and '早安' in elegant white calligraphy.",
-  },
-  {
-    name: "calm",
-    prompt: "Soft watercolour illustration, warm pastel colours, Singapore context, calm morning mist over a zen garden with bamboo, cosy and cheerful, suitable for elderly audience. Include the words 'Good Morning' and '早安' in gentle soft-focus calligraphy.",
-  }
-];
-
 export async function GET(request: Request) {
   // Check authorization for cron job (Vercel adds this header automatically)
   const authHeader = request.headers.get('authorization');
@@ -30,11 +21,13 @@ export async function GET(request: Request) {
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getSingaporeDateString();
   console.log(`Starting daily image generation for ${today}`);
 
   try {
-    const generationPromises = themes.map(async (theme) => {
+    await ensurePublicImageBucket();
+
+    const generationPromises = morningImageThemes.map(async (theme) => {
       console.log(`Generating image for theme: ${theme.name}`);
       const imagePrompt = `${theme.prompt} The text should be clear and high contrast for seniors.`;
       
@@ -45,29 +38,45 @@ export async function GET(request: Request) {
         });
         
         const imageData = imageResponse.data?.[0];
-        let dataUrl = "";
+        let imageBuffer: ArrayBuffer | Buffer;
 
         if (imageData?.url) {
           const imgRes = await fetch(imageData.url);
           if (!imgRes.ok) throw new Error(`Failed to fetch image from OpenAI for ${theme.name}`);
-          const buffer = await imgRes.arrayBuffer();
-          dataUrl = `data:image/png;base64,${Buffer.from(buffer).toString("base64")}`;
+          imageBuffer = await imgRes.arrayBuffer();
         } else if (imageData?.b64_json) {
-          dataUrl = `data:image/png;base64,${imageData.b64_json}`;
+          imageBuffer = Buffer.from(imageData.b64_json, "base64");
         } else {
           throw new Error(`No image data returned for ${theme.name}`);
         }
+
+        const storagePath = getStoragePath(today, theme.name);
+        const { error: uploadError } = await supabaseServer.storage
+          .from(morningImageBucket)
+          .upload(storagePath, imageBuffer, {
+            contentType: "image/png",
+            upsert: true,
+          });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabaseServer.storage
+          .from(morningImageBucket)
+          .getPublicUrl(storagePath);
+
+        const imageUrl = publicUrlData.publicUrl;
         
         const { error } = await supabaseServer
           .from("daily_images")
           .upsert({
             theme: theme.name,
             date_string: today,
-            image_url: dataUrl
+            image_url: imageUrl,
+            storage_path: storagePath,
           }, { onConflict: 'theme, date_string' });
           
         if (error) throw error;
-        return { theme: theme.name, success: true };
+        return { theme: theme.name, imageUrl, storagePath, success: true };
       } catch (err: any) {
         console.error(`Error generating ${theme.name}:`, err);
         return { theme: theme.name, success: false, error: err.message };
@@ -92,5 +101,20 @@ export async function GET(request: Request) {
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     }, { status: 500 });
+  }
+}
+
+async function ensurePublicImageBucket() {
+  const { error } = await supabaseServer.storage.getBucket(morningImageBucket);
+  if (!error) return;
+
+  const { error: createError } = await supabaseServer.storage.createBucket(morningImageBucket, {
+    public: true,
+    fileSizeLimit: "5MB",
+    allowedMimeTypes: ["image/png"],
+  });
+
+  if (createError && createError.message !== "The resource already exists") {
+    throw createError;
   }
 }

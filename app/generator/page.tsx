@@ -11,6 +11,7 @@ export default function GeneratorPage() {
   const [result, setResult] = useState<{
     imageUrl: string;
     greeting: string;
+    spokenScript?: string;
     theme: string;
   } | null>(null);
 
@@ -33,6 +34,11 @@ export default function GeneratorPage() {
     try {
       // First trigger the cron to generate today's images
       await fetch("/api/cron/morning-images", { method: "GET" });
+
+      const designIds = ["heritage-card", "garden-collage", "waterfall-calm"];
+      const designId = designIds[Math.floor(Math.random() * designIds.length)];
+      const imageRes = await fetch(`/api/morning-image?designId=${designId}`);
+      const imageData = await imageRes.json();
       
       // Then fetch the resulting morning data
       const res = await fetch("/api/morning", {
@@ -41,11 +47,11 @@ export default function GeneratorPage() {
         body: JSON.stringify({
           nickname: "Ah Gong",
           language: "zh",
-          randomTheme: true,
+          designId,
         }),
       });
       const data = await res.json();
-      setResult(data);
+      setResult({ ...data, imageUrl: imageData.imageUrl, theme: imageData.theme });
     } catch (error) {
       console.error(error);
       alert("Failed to generate. Check console.");
@@ -59,7 +65,7 @@ export default function GeneratorPage() {
     const pageUrl = typeof window !== "undefined" ? window.location.origin : "https://morningkaki.vercel.app";
     
     // We construct the text to be shared via WhatsApp.
-    const text = `早安！\n\n${result.greeting}\n\n今天的早安图准备好了：\n${result.imageUrl}\n\n点击这里查看：\n${pageUrl}/s/demo`;
+    const text = `早安！\n\n${result.spokenScript || result.greeting}\n\n今天的早安图准备好了：\n${result.imageUrl}\n\n点击这里查看：\n${pageUrl}/s/demo`;
     
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   };

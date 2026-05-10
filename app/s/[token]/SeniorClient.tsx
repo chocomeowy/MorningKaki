@@ -18,6 +18,7 @@ import {
   morningDesignStorageKey,
   type MorningDesign,
 } from "@/lib/morning-designs";
+import { getMorningImageTheme, getThemeForDesign } from "@/lib/morning-image-cache";
 import { getMoodStickerSrc, type MoodStickerId } from "@/lib/mood-stickers";
 import { supabase } from "@/lib/supabase/client";
 
@@ -29,13 +30,21 @@ interface SeniorProfile {
 
 interface MorningData {
   greeting: string;
-  imageUrl: string;
   spokenScript?: string;
   weather?: string;
   localNews?: string[];
   medicines?: string[];
   reminders?: string[];
 }
+
+interface MorningImageData {
+  imageUrl: string;
+  theme: string;
+  dateString: string;
+  source: "storage" | "static";
+}
+
+type NarrationStatus = "idle" | "generatingText" | "generatingAudio" | "playing" | "failed";
 
 interface MedicationRow {
   id: string;
@@ -86,7 +95,7 @@ const copy = {
     listen: "Tap to talk",
     today: "Today",
     news: "Local news",
-    share: "Share morning",
+    share: "Share",
     moodPrompt: "How are you feeling?",
     moodSaved: "Thank you. I saved it.",
     moodSaving: "Saving...",
@@ -114,7 +123,7 @@ const copy = {
     listen: "按这里说话",
     today: "今天",
     news: "本地新闻",
-    share: "分享早安",
+    share: "分享",
     moodPrompt: "今天感觉怎样？",
     moodSaved: "谢谢，已经记录了。",
     moodSaving: "记录中...",
@@ -157,14 +166,20 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const defaultLang = normalizeSeniorLanguage(senior.primary_language);
   const [language, setLanguage] = useState<string>(defaultLang);
   const [selectedMood, setSelectedMood] = useState<MoodStickerId | null>(null);
+  const [isMoodLocked, setIsMoodLocked] = useState(false);
   const selectedDesignId = useSyncExternalStore(
     subscribeToMorningDesign,
     getStoredMorningDesign,
     getDefaultMorningDesign,
   );
   const design = getMorningDesign(selectedDesignId);
+  const fallbackTheme = getMorningImageTheme(getThemeForDesign(design.id));
+  const fallbackImage = design.heroImage ?? fallbackTheme.fallbackImage;
+  const [morningImage, setMorningImage] = useState<MorningImageData | null>(null);
   const [morningData, setMorningData] = useState<MorningData | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isImageLoading, setIsImageLoading] = useState(true);
+  const [narrationStatus, setNarrationStatus] = useState<NarrationStatus>("idle");
+  const [narrationError, setNarrationError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [showMoodModal, setShowMoodModal] = useState(false);
@@ -224,7 +239,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
-  const imagePath = morningData?.imageUrl ?? design.heroImage ?? "/morning_illustration.png";
+  const imagePath = morningImage?.imageUrl ?? fallbackImage;
   const [pageUrl, setPageUrl] = useState("");
 
   useEffect(() => {
@@ -250,7 +265,6 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
-            text: pageUrl,
           });
           return;
         }
@@ -259,18 +273,62 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
       console.warn("Native file share failed", err);
     }
 
-    // Fallback: open WhatsApp with just the link
-    window.open(`https://wa.me/?text=${encodeURIComponent(pageUrl)}`, "_blank");
+    // Fallback: open the picture itself.
+    window.open(rawImageUrl, "_blank");
   };
 
   const handleMorningImageReady = useCallback(() => {
     const savedMood = window.localStorage.getItem(getMoodStorageKey(senior.id)) as MoodStickerId | null;
     if (savedMood && validClientMoodIds.has(savedMood)) {
       setSelectedMood(savedMood);
+      setIsMoodLocked(true);
       return;
     }
     setShowMoodModal(true);
   }, [senior.id]);
+
+  useEffect(() => {
+    const savedMood = window.localStorage.getItem(getMoodStorageKey(senior.id)) as MoodStickerId | null;
+    if (savedMood && validClientMoodIds.has(savedMood)) {
+      setSelectedMood(savedMood);
+      setIsMoodLocked(true);
+      setShowMoodModal(false);
+      return;
+    }
+
+    setSelectedMood(null);
+    setIsMoodLocked(false);
+  }, [senior.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMorningImage() {
+      setIsImageLoading(true);
+      try {
+        const response = await fetch(`/api/morning-image?designId=${encodeURIComponent(design.id)}`);
+        if (!response.ok) throw new Error("Image lookup failed");
+        const data = (await response.json()) as MorningImageData;
+        if (!cancelled) setMorningImage(data);
+      } catch {
+        if (!cancelled) {
+          setMorningImage({
+            imageUrl: fallbackImage,
+            theme: fallbackTheme.name,
+            dateString: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" }),
+            source: "static",
+          });
+        }
+      } finally {
+        if (!cancelled) setIsImageLoading(false);
+      }
+    }
+
+    loadMorningImage();
+    return () => {
+      cancelled = true;
+    };
+  }, [design.id, fallbackImage, fallbackTheme.name]);
 
   useEffect(() => {
     async function registerPush() {
@@ -317,13 +375,18 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   }, [senior.id]);
 
   useEffect(() => {
+    const controller = new AbortController();
+
     async function generateMorning() {
       if (!contextReady) return;
-      setIsGenerating(true);
+      setMorningData(null);
+      setNarrationError(null);
+      setNarrationStatus("generatingText");
       try {
         const res = await fetch('/api/morning', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             nickname: senior.nickname,
             language: language,
@@ -332,42 +395,75 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
             reminders: reminderSummaries,
           })
         });
-        if (res.ok) {
-          const data = await res.json();
-          setMorningData(data);
-        }
+        if (!res.ok) throw new Error("Morning text failed");
+
+        const data = await res.json();
+        setMorningData(data);
       } catch (err) {
-        void err;
-      } finally {
-        setIsGenerating(false);
+        if (!controller.signal.aborted) {
+          setNarrationStatus("failed");
+          setNarrationError(
+            isChineseReadingLanguage(language)
+              ? "早安内容暂时准备不到，请等一下再试。"
+              : "The morning message is taking too long. Please try again soon.",
+          );
+        }
       }
     }
     generateMorning();
+
+    return () => controller.abort();
   }, [senior.nickname, language, design.id, medicineSummaries, reminderSummaries, contextReady]);
 
   useEffect(() => {
     const script = morningData?.spokenScript ?? morningData?.greeting;
-    if (script && !isGenerating) {
+    if (script) {
+      let audioUrl: string | null = null;
+      let audio: HTMLAudioElement | null = null;
+      const controller = new AbortController();
+
       async function playGreeting() {
+        setNarrationStatus("generatingAudio");
+        setNarrationError(null);
         try {
           const res = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
             body: JSON.stringify({ text: script, language })
           });
-          if (res.ok) {
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            await audio.play().catch(() => undefined);
-          }
+          if (!res.ok) throw new Error("TTS failed");
+
+          const blob = await res.blob();
+          if (controller.signal.aborted) return;
+
+          audioUrl = URL.createObjectURL(blob);
+          audio = new Audio(audioUrl);
+          audio.onended = () => setNarrationStatus("idle");
+          setNarrationStatus("playing");
+          await audio.play().catch(() => {
+            setNarrationStatus("idle");
+          });
         } catch (err) {
-          void err;
+          if (!controller.signal.aborted) {
+            setNarrationStatus("failed");
+            setNarrationError(
+              isChineseReadingLanguage(language)
+                ? "声音暂时准备不到，但早安内容已经在这里。"
+                : "The voice is not ready yet, but the morning message is here.",
+            );
+          }
         }
       }
       playGreeting();
+
+      return () => {
+        controller.abort();
+        audio?.pause();
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+      };
     }
-  }, [morningData?.spokenScript, morningData?.greeting, isGenerating, language]);
+  }, [morningData?.spokenScript, morningData?.greeting, language]);
 
   const startRecording = async () => {
     try {
@@ -456,11 +552,8 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
         {/* Full-bleed image — no horizontal padding */}
         <section className="w-full">
           <MorningCard 
-            design={design} 
-            content={content} 
-            nickname={senior.nickname} 
-            morningData={morningData}
-            isGenerating={isGenerating}
+            imageUrl={imagePath}
+            isImageLoading={isImageLoading}
             onImageReady={handleMorningImageReady}
           />
         </section>
@@ -499,10 +592,11 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
               <button
                 key={sticker.id}
                 onClick={() => saveMood(sticker.id)}
+                disabled={isMoodLocked || isSavingMood}
                 aria-label={sticker.label}
-                className={`min-h-24 rounded-[1.35rem] border bg-white p-2 text-center shadow-sm ${
+                className={`min-h-24 rounded-[1.35rem] border bg-white p-2 text-center shadow-sm disabled:cursor-not-allowed ${
                   selectedMood === sticker.id ? "border-amber-400 ring-4 ring-amber-100" : "border-amber-100"
-                }`}
+                } ${isMoodLocked && selectedMood !== sticker.id ? "opacity-45" : ""}`}
               >
                 <Image
                   src={getMoodStickerSrc(design.id, sticker.id as MoodStickerId)}
@@ -515,11 +609,13 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
             ))}
           </div>
           {selectedMood ? (
-            <p className="mt-3 text-base font-bold text-emerald-700">{content.moodSaved}</p>
+            <p className="mt-3 text-base font-bold text-emerald-700">
+              {isMoodLocked ? `${content.moodSaved} ${isChineseReadingLanguage(language) ? "明天可以再选。" : "You can choose again tomorrow."}` : content.moodSaved}
+            </p>
           ) : null}
         </section>
 
-        <section className="mt-5 space-y-3 px-4 pb-20">
+        <section className="mt-5 space-y-3 px-4">
           <SectionTitle title={content.today} icon={BellRing} />
           {meds.map((m) => (
             <div key={m.id} className="flex min-h-20 items-center gap-4 rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-amber-100">
@@ -558,6 +654,16 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
           )}
         </section>
 
+        <section className="mt-auto px-4 pb-20 pt-5">
+          <MorningTextCard
+            content={content}
+            nickname={senior.nickname}
+            morningData={morningData}
+            narrationStatus={narrationStatus}
+            narrationError={narrationError}
+          />
+        </section>
+
         <audio ref={audioPlayerRef} className="hidden" />
       </div>
       {showMoodModal ? (
@@ -566,6 +672,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
           design={design}
           selectedMood={selectedMood}
           isSaving={isSavingMood}
+          isLocked={isMoodLocked}
           hasError={moodSaveError}
           onSelect={saveMood}
         />
@@ -574,6 +681,8 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   );
 
   async function saveMood(moodId: MoodStickerId) {
+    if (isMoodLocked || isSavingMood) return;
+    const previousMood = selectedMood;
     setSelectedMood(moodId);
     setIsSavingMood(true);
     setMoodSaveError(false);
@@ -589,8 +698,10 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
       }
 
       window.localStorage.setItem(getMoodStorageKey(senior.id), moodId);
+      setIsMoodLocked(true);
       setShowMoodModal(false);
     } catch {
+      setSelectedMood(previousMood);
       setMoodSaveError(true);
     } finally {
       setIsSavingMood(false);
@@ -599,59 +710,52 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
 }
 
 function MorningCard({
-  design,
-  content,
-  nickname,
-  morningData,
-  isGenerating,
+  imageUrl,
+  isImageLoading,
   onImageReady,
 }: {
-  design: MorningDesign;
-  content: (typeof copy)["en"];
-  nickname: string;
-  morningData: MorningData | null;
-  isGenerating: boolean;
+  imageUrl: string;
+  isImageLoading: boolean;
   onImageReady: () => void;
 }) {
-  if (isGenerating) {
+  if (!imageUrl && isImageLoading) {
     return (
       <div className="flex h-[48vw] min-h-72 max-h-[480px] items-center justify-center bg-amber-100">
         <div className="flex flex-col items-center gap-3 text-amber-700">
           <Sun className="h-8 w-8 animate-spin" />
-          <p className="font-extrabold">Painting your morning...</p>
+          <p className="font-extrabold">Getting your morning ready...</p>
         </div>
       </div>
     );
   }
 
-  const activeImage = morningData?.imageUrl || design.heroImage;
-  const activeGreeting = morningData?.greeting || content.greeting(nickname);
-
-  if (activeImage) {
+  if (imageUrl) {
     return (
-      <div className="relative w-full" style={{ aspectRatio: '3/2' }}>
-        <Image
-          src={activeImage}
-          alt="Generated good morning card"
-          fill
-          sizes="100vw"
-          priority
-          className="object-cover"
-          onLoad={onImageReady}
-        />
-        <div className="absolute inset-x-4 bottom-4 rounded-[1.5rem] bg-white/90 p-4 shadow-lg backdrop-blur">
-          <div className="flex items-center gap-2 text-base font-extrabold text-amber-700">
-            <Sun className="h-5 w-5 shrink-0" />
-            <span className="line-clamp-1">{content.subcopy}</span>
-          </div>
-          <p className="mt-1 max-h-32 overflow-y-auto text-base font-bold leading-snug text-slate-900">{activeGreeting}</p>
+      <section className="w-full">
+        <div className="relative w-full bg-amber-100" style={{ aspectRatio: '3/2' }}>
+          {isImageLoading ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-amber-50/70 text-amber-800">
+              <Sun className="mr-2 h-6 w-6 animate-spin" />
+              <span className="text-lg font-extrabold">Loading morning...</span>
+            </div>
+          ) : null}
+          <Image
+            src={imageUrl}
+            alt="Generated good morning card"
+            fill
+            sizes="100vw"
+            priority
+            unoptimized={imageUrl.startsWith("data:")}
+            className="object-cover"
+            onLoad={onImageReady}
+          />
         </div>
-      </div>
+      </section>
     );
   }
 
   return (
-    <div className={`relative h-[38vh] min-h-72 overflow-hidden rounded-[2rem] ${design.previewClassName} shadow-[0_18px_60px_rgba(147,92,14,0.16)]`}>
+    <div className="relative h-[38vh] min-h-72 overflow-hidden rounded-[2rem] bg-gradient-to-br from-sky-200 via-rose-100 to-amber-200 shadow-[0_18px_60px_rgba(147,92,14,0.16)]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(255,255,255,.9),transparent_22%),radial-gradient(circle_at_80%_18%,rgba(244,63,94,.5),transparent_18%),radial-gradient(circle_at_28%_86%,rgba(234,179,8,.55),transparent_18%)]" />
       <div className="absolute inset-x-4 top-4 rounded-2xl bg-white/75 p-3 text-center shadow-sm backdrop-blur">
         <p className="text-3xl font-black tracking-wide text-amber-700">GOOD MORNING</p>
@@ -662,11 +766,79 @@ function MorningCard({
       </div>
       <div className="absolute bottom-4 right-4 flex items-center gap-2 rounded-full bg-white/85 px-4 py-2 text-base font-black text-slate-700 shadow-sm">
         <ImageIcon className="h-5 w-5 text-amber-700" />
-        {design.shortName}
+        MorningKaki
       </div>
       <div className="sr-only">
         <Image src="/morning_illustration.png" alt="" width={1} height={1} onLoad={onImageReady} />
       </div>
+    </div>
+  );
+}
+
+function MorningTextCard({
+  content,
+  nickname,
+  morningData,
+  narrationStatus,
+  narrationError,
+}: {
+  content: (typeof copy)["en"];
+  nickname: string;
+  morningData: MorningData | null;
+  narrationStatus: NarrationStatus;
+  narrationError: string | null;
+}) {
+  const activeGreeting = morningData?.spokenScript || morningData?.greeting || content.greeting(nickname);
+
+  return (
+    <div className="rounded-[1.5rem] bg-white p-4 shadow-sm ring-1 ring-amber-100">
+      <div className="flex items-center gap-2 text-base font-extrabold text-amber-700">
+        <Sun className="h-5 w-5 shrink-0" />
+        <span>{content.subcopy}</span>
+      </div>
+      <p className="mt-2 text-lg font-bold leading-snug text-slate-900">
+        {activeGreeting}
+      </p>
+      <NarrationProgress status={narrationStatus} error={narrationError} />
+    </div>
+  );
+}
+
+function NarrationProgress({
+  status,
+  error,
+}: {
+  status: NarrationStatus;
+  error: string | null;
+}) {
+  if (status === "idle") return null;
+
+  if (status === "failed") {
+    return error ? <p className="mt-3 text-base font-bold text-amber-800">{error}</p> : null;
+  }
+
+  const label =
+    status === "generatingText"
+      ? "Writing your morning..."
+      : status === "generatingAudio"
+        ? "Preparing the voice..."
+        : "Reading aloud...";
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-base font-extrabold text-amber-800">{label}</p>
+        {status === "playing" ? (
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-extrabold text-emerald-700">
+            Playing
+          </span>
+        ) : null}
+      </div>
+      {status === "generatingAudio" ? (
+        <div className="mt-3 h-3 overflow-hidden rounded-full bg-amber-100">
+          <div className="h-full w-1/2 animate-[pulse_1.2s_ease-in-out_infinite] rounded-full bg-amber-500" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -676,6 +848,7 @@ function MoodModal({
   design,
   selectedMood,
   isSaving,
+  isLocked,
   hasError,
   onSelect,
 }: {
@@ -683,6 +856,7 @@ function MoodModal({
   design: MorningDesign;
   selectedMood: MoodStickerId | null;
   isSaving: boolean;
+  isLocked: boolean;
   hasError: boolean;
   onSelect: (moodId: MoodStickerId) => void;
 }) {
@@ -696,7 +870,7 @@ function MoodModal({
               key={sticker.id}
               type="button"
               aria-label={sticker.label}
-              disabled={isSaving}
+              disabled={isSaving || isLocked}
               onClick={() => onSelect(sticker.id)}
               className={`flex aspect-square min-h-16 items-center justify-center rounded-2xl border bg-amber-50 p-1.5 transition active:scale-95 disabled:opacity-60 ${
                 selectedMood === sticker.id ? "border-amber-400 ring-4 ring-amber-100" : "border-amber-100"

@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { getMorningDesign } from "@/lib/morning-designs";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-
-const supabaseServer = createServerSupabaseClient();
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "dummy_key_to_bypass_build_error",
@@ -35,7 +31,6 @@ function getErrorMessage(error: unknown) {
 export async function POST(request: Request) {
   try {
     const body = await readBody(request);
-    const design = getMorningDesign(body.designId ?? null);
     const nickname = body.nickname?.trim() || "Ah Gong";
     const weather = await getSingaporeWeather(body.weather);
     const language = body.language || "en";
@@ -99,39 +94,6 @@ export async function POST(request: Request) {
     });
     const greeting = getDisplayGreeting(language, nickname);
 
-    // 2. Determine today's theme based on profile design setting
-    const designThemeMap: Record<string, string> = {
-      "heritage-card": "blessing",
-      "garden-collage": "gardens",
-      "waterfall-calm": "calm"
-    };
-    
-    // Default to blessing if not found, but if randomTheme is true (e.g. for demo generator), pick randomly
-    const themeNames = ["blessing", "gardens", "calm"];
-    const theme = body.randomTheme 
-      ? themeNames[Math.floor(Math.random() * themeNames.length)]
-      : designThemeMap[design.id] || "blessing";
-
-    const todayStr = new Date().toISOString().slice(0, 10);
-    let imageUrl = `/daily-theme-${theme}.png`; // default fallback
-    let imageSource = "static";
-
-    try {
-      const { data, error } = await supabaseServer
-        .from("daily_images")
-        .select("image_url")
-        .eq("theme", theme)
-        .eq("date_string", todayStr)
-        .single();
-        
-      if (data?.image_url && !error) {
-        imageUrl = data.image_url;
-        imageSource = "database";
-      }
-    } catch (e) {
-      console.error("Failed to fetch daily image from DB, using fallback", e);
-    }
-
     return NextResponse.json({
       greeting,
       spokenScript,
@@ -139,11 +101,6 @@ export async function POST(request: Request) {
       localNews,
       medicines,
       reminders,
-      imageUrl,
-      theme,
-      imageSource,
-      designId: design.id,
-      generatedForDate: todayStr,
     });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
