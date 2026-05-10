@@ -55,6 +55,8 @@ interface WizardContextValue {
 
 export const WizardContext = createContext<WizardContextValue | null>(null);
 
+const returnPathKey = "morningkaki:return-path";
+
 export function useWizard() {
   return useContext(WizardContext);
 }
@@ -252,7 +254,9 @@ function WizardFooter({
       <Button
         onClick={async () => {
           if (isLastStep) {
-            router.push(`/dashboard/${context?.data?.seniorId || 'demo'}`);
+            const dashboardPath = context?.data?.seniorId ? `/dashboard/${context.data.seniorId}` : "/dashboard";
+            window.localStorage.setItem(returnPathKey, dashboardPath);
+            router.push(dashboardPath);
             return;
           }
 
@@ -286,32 +290,38 @@ function WizardFooter({
             }
 
             // Save medications (replace all for this senior)
-            if (savedId && context.data.medications.length > 0) {
+            const medicationsToSave = context.data.medications.filter((med) => med.name.trim());
+            if (savedId) {
               await supabase.from("medications").delete().eq("senior_id", savedId);
-              await supabase.from("medications").insert(
-                context.data.medications.map((med) => ({
-                  senior_id: savedId,
-                  name: med.name,
-                  dosage: "",
-                  schedule_times: [context.data.timings.med],
-                }))
-              );
+              if (medicationsToSave.length > 0) {
+                await supabase.from("medications").insert(
+                  medicationsToSave.map((med) => ({
+                    senior_id: savedId,
+                    name: med.name.trim(),
+                    dosage: "",
+                    schedule_times: [context.data.timings.med],
+                  }))
+                );
+              }
             }
 
             // Save reminders (replace all for this senior)
-            if (savedId && context.data.reminders.length > 0) {
+            const remindersToSave = context.data.reminders.filter((rem) => rem.name.trim());
+            if (savedId) {
               await supabase.from("reminders").delete().eq("senior_id", savedId);
-              await supabase.from("reminders").insert(
-                context.data.reminders.map((rem) => {
-                  const today = new Date().toISOString().split("T")[0];
-                  return {
-                    senior_id: savedId,
-                    text: rem.name,
-                    remind_at: `${today}T${rem.time}:00+08:00`,
-                    recurring: false,
-                  };
-                })
-              );
+              if (remindersToSave.length > 0) {
+                await supabase.from("reminders").insert(
+                  remindersToSave.map((rem) => {
+                    const today = new Date().toISOString().split("T")[0];
+                    return {
+                      senior_id: savedId,
+                      text: rem.location.trim() ? `${rem.name.trim()} (${rem.location.trim()})` : rem.name.trim(),
+                      remind_at: `${today}T${rem.time}:00+08:00`,
+                      recurring: false,
+                    };
+                  })
+                );
+              }
             }
 
             context.setData((prev) => ({ ...prev, magicToken: token, seniorId: savedId, isSaving: false }));

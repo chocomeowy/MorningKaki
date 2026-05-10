@@ -49,7 +49,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No active push subscriptions found" }, { status: 404 });
     }
 
-    const seniorUrl = senior?.magic_token ? `/s/${senior.magic_token}` : "/s/demo";
+    const seniorUrl = senior?.magic_token ? `/s/${senior.magic_token}` : "/";
 
     const payload = JSON.stringify({
       title: title || "🌅 Good morning!",

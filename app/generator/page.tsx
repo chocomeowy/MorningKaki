@@ -65,7 +65,7 @@ export default function GeneratorPage() {
     const pageUrl = typeof window !== "undefined" ? window.location.origin : "https://morningkaki.vercel.app";
     
     // We construct the text to be shared via WhatsApp.
-    const text = `早安！\n\n${result.spokenScript || result.greeting}\n\n今天的早安图准备好了：\n${result.imageUrl}\n\n点击这里查看：\n${pageUrl}/s/demo`;
+    const text = `早安！\n\n${result.spokenScript || result.greeting}\n\n今天的早安图准备好了：\n${result.imageUrl}\n\n点击这里开始设置：\n${pageUrl}/setup`;
     
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   };

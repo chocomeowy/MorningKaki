@@ -5,26 +5,24 @@ import type { Dispatch, SetStateAction } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Bell,
-  CalendarDays,
   ChevronRight,
   Clock3,
   Languages,
   MessageCircle,
   Pill,
-  Plus,
   ScanLine,
   ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BackgroundDesignPicker } from "./BackgroundDesignPicker";
+import { MedicationRows, ReminderRows } from "./EditableSetupRows";
 import { useWizard } from "../SetupWizard";
-import type { MedicationDraft, ReminderDraft, WizardData } from "../SetupWizard";
+import type { WizardData } from "../SetupWizard";
 import {
   Choice,
   ComingSoon,
   Field,
   Label,
-  ReviewCard,
   StepShell,
   TimeBox,
   TrustStrip,
@@ -94,7 +92,7 @@ function MedicationStep({ data, setData }: DataStepProps) {
     setTimeout(() => {
       setData((p) => ({
         ...p,
-        medications: [...p.medications, { id: Math.random().toString(), name: "Lisinopril 10mg", timing: "Evening after dinner" }]
+        medications: [...p.medications, { id: crypto.randomUUID(), name: "Lisinopril 10mg", timing: "Evening after dinner" }]
       }));
     }, 500);
   };
@@ -114,14 +112,7 @@ function MedicationStep({ data, setData }: DataStepProps) {
         </span>
       </button>
 
-      {data.medications.map((med: MedicationDraft) => (
-        <ReviewCard key={med.id} title={med.name} meta={med.timing} accent="blue" />
-      ))}
-      
-      <Button variant="outline" className="h-14 w-full rounded-2xl border-dashed text-base font-bold">
-        <Plus className="h-5 w-5" />
-        Add another medication manually
-      </Button>
+      <MedicationRows data={data} setData={setData} />
     </StepShell>
   );
 }
@@ -133,32 +124,7 @@ function ReminderStep({ data, setData }: DataStepProps) {
       title="Make the day feel familiar."
       description="Appointments and custom reminders are written in everyday language so they sound natural when spoken aloud."
     >
-      {data.reminders.map((rem: ReminderDraft) => (
-        <ReviewCard
-          key={rem.id}
-          title={rem.name}
-          meta={`${rem.time} at ${rem.location}`}
-          accent="purple"
-        />
-      ))}
-
-      <button onClick={() => {
-        const name = window.prompt("Reminder title (e.g. Call Grandkids)");
-        if (name) {
-          const time = window.prompt("Time (e.g. 15:00)") || "12:00";
-          setData((p) => ({
-            ...p,
-            reminders: [...p.reminders, { id: Math.random().toString(), name, time, location: "Home" }]
-          }));
-        }
-      }} className="flex flex-col rounded-3xl border border-amber-100 bg-amber-50 p-5 text-left transition hover:bg-amber-100/50">
-        <CalendarDays className="h-7 w-7 text-amber-700" />
-        <h4 className="mt-3 text-xl font-extrabold text-amber-950">Custom reminder</h4>
-        <p className="mt-1 text-slate-600">Add anything from tai chi class to calling the grandchildren.</p>
-        <span className="mt-4 flex h-12 w-fit items-center justify-center rounded-2xl bg-amber-500 px-5 font-bold text-white hover:bg-amber-600">
-          Add reminder
-        </span>
-      </button>
+      <ReminderRows data={data} setData={setData} />
 
       <div className="grid gap-3 sm:grid-cols-2">
         <ComingSoon title="HealthBuddy link" />
@@ -231,7 +197,7 @@ function ShareStep({ data }: { data: WizardData }) {
               <MessageCircle className="h-5 w-5" />
               Send via WhatsApp
             </Button>
-            <Link href="/dashboard/demo" className="inline-flex items-center gap-1 font-bold text-amber-700">
+            <Link href="/dashboard" className="inline-flex items-center gap-1 font-bold text-amber-700">
               Open caregiver dashboard <ChevronRight className="h-4 w-4" />
             </Link>
           </div>

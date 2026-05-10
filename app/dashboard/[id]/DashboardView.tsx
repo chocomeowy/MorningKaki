@@ -48,12 +48,19 @@ const memories = [
   { date: "Monday", mood: "❤️", text: "My grandson came to visit after school.", time: "2:05" },
 ];
 
+const returnPathKey = "morningkaki:return-path";
+
 export function DashboardView({ id }: { id: string }) {
   const [senior, setSenior] = useState<any>(null);
   
   const pageUrl = useMemo(() => {
     return typeof window !== "undefined" ? window.location.origin : "https://morningkaki.vercel.app";
   }, []);
+
+  useEffect(() => {
+    const dashboardPath = id && id !== "demo" && id !== "[id]" ? `/dashboard/${id}` : "/dashboard";
+    window.localStorage.setItem(returnPathKey, dashboardPath);
+  }, [id]);
 
   useEffect(() => {
     async function loadSenior() {

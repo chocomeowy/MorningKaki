@@ -2,7 +2,7 @@
   "name": "MorningKaki",
   "short_name": "MorningKaki",
   "description": "A daily AI companion for Singapore seniors.",
-  "start_url": "/s/demo",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#fff8ed",

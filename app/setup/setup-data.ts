@@ -7,5 +7,3 @@ export const setupSteps = [
   { label: "Timing", railLabel: "Time", icon: Bell },
   { label: "Send link", railLabel: "Link", icon: Gift },
 ] as const;
-
-export const setupMagicLink = "https://morningkaki.vercel.app/s/demo";

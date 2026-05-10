@@ -152,6 +152,8 @@ const getMoodStorageKey = (seniorId: string) => {
   return `morningkaki:mood:${seniorId}:${today}`;
 };
 
+const returnPathKey = "morningkaki:return-path";
+
 function isChineseReadingLanguage(language: string) {
   return language === "zh" || language === "hokkien" || language === "cantonese";
 }
@@ -244,6 +246,9 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
 
   useEffect(() => {
     setPageUrl(window.location.href);
+    if (window.location.pathname.startsWith("/s/") && window.location.pathname !== "/s/demo") {
+      window.localStorage.setItem(returnPathKey, window.location.pathname);
+    }
   }, []);
   const handleShare = async () => {
     const origin = pageUrl ? new URL(pageUrl).origin : window.location.origin;
