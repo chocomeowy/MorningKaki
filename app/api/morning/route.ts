@@ -5,6 +5,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "dummy_key_to_bypass_build_error",
 });
 
+const MORNING_SCRIPT_MODEL = "gpt-5.4-mini";
+const MORNING_SCRIPT_FALLBACK_MODEL = "gpt-5-nano";
+
 interface MorningRequest {
   designId?: string;
   nickname?: string;
@@ -46,7 +49,7 @@ export async function POST(request: Request) {
       timeZone: "Asia/Singapore",
     });
 
-    // 1. Generate the personalized spoken script using GPT-5-mini, with nano fallback if unavailable.
+    // 1. Generate the personalized spoken script, with nano fallback if unavailable.
     const messages: MorningMessage[] = [
         {
           role: "system",
@@ -219,7 +222,7 @@ async function createMorningScript(messages: MorningMessage[]) {
 
   try {
     const response = await openai.responses.create({
-      model: "gpt-5-mini",
+      model: MORNING_SCRIPT_MODEL,
       input,
       max_output_tokens: 8000,
       reasoning: { effort: "minimal" },
@@ -231,7 +234,7 @@ async function createMorningScript(messages: MorningMessage[]) {
     const errorMessage = getErrorMessage(error);
     if (errorMessage.includes("does not have access") || errorMessage.includes("model_not_found")) {
       const response = await openai.responses.create({
-        model: "gpt-5-nano",
+        model: MORNING_SCRIPT_FALLBACK_MODEL,
         input,
         max_output_tokens: 8000,
         reasoning: { effort: "minimal" },

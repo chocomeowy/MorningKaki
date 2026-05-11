@@ -8,8 +8,8 @@
 A daily AI companion PWA for Singapore seniors, paired with a caregiver
 setup wizard and dashboard for their adult children.
 
-Every morning, the senior receives a personalised greeting with a
-Fal-generated illustrated scene, checks in via voice or emoji mood sticker,
+Every morning, the senior receives a personalised greeting with an
+OpenAI-generated illustrated scene, checks in via voice or emoji mood sticker,
 sees their reminders and local news — all spoken aloud in their language.
 The caregiver gets a quiet daily summary with mood trends, sentiment
 analysis, and saved voice memories. No app store. No senior login. Just a
@@ -57,13 +57,16 @@ Full navigation. All configuration and monitoring lives here.
 
 | Method | Path                    | Description                                           |
 |--------|-------------------------|-------------------------------------------------------|
-| POST   | `/api/morning`          | Generate greeting text + trigger Fal illustration     |
+| POST   | `/api/morning`          | Generate greeting text from weather, reminders, news  |
 | POST   | `/api/voice`            | Transcribe audio + generate reply + sentiment score   |
 | POST   | `/api/mood`             | Log emoji sticker selection with timestamp            |
 | POST   | `/api/push/subscribe`   | Save web push subscription to Supabase                |
 | POST   | `/api/push/send`        | Manually trigger a push notification (demo use)       |
-| GET    | `/api/summary/[id]`     | Caregiver daily summary for a given senior            |
-| POST   | `/api/medications/scan` | Fal multimodal scan of medication label photo         |
+| POST   | `/api/tts`              | Generate spoken audio with ElevenLabs                 |
+| GET    | `/api/voice-logs`       | Return signed caregiver voice-memory URLs             |
+| GET    | `/api/morning-image`    | Return today's cached morning image or static fallback|
+| POST   | `/api/morning-image/generate` | Generate and cache today's theme image          |
+| GET    | `/api/image-proxy`      | Proxy images for sharing and display                  |
 
 ---
 
@@ -80,8 +83,7 @@ is a single focused screen. Progress indicator visible throughout.
 - Secondary language toggle (optional)
 
 **Step 2 — Medications**
-- "Add medication" opens camera — photo sent to `/api/medications/scan`
-- Fal reads the label, extracts name and dosage, pre-fills the form
+- Add medication manually in the setup flow for the current demo
 - Caregiver confirms or edits before saving
 - Schedule: morning after breakfast / evening after dinner / custom time
 - Unlimited entries
@@ -124,7 +126,7 @@ high contrast, warm colour palette. No navigation bar. No settings visible.
 
 Structure (top to bottom):
 1. App bar: "MorningKaki" wordmark left, [EN] [中] language toggle right
-2. Fal-generated morning illustration — full width, ~40% screen height
+2. OpenAI-generated or cached morning illustration — full width, ~40% screen height
 3. Greeting text: "Good morning, [Nickname]!" + date + weather condition
 4. TAP TO TALK button — large, prominent, rounded, microphone icon
 5. Emoji sticker row — 5 stickers, pre-generated, always the same 5:
@@ -163,44 +165,30 @@ Illustration does not regenerate on language toggle.
 
 ## AI Services
 
-### Gemini (Primary LLM)
-- Morning greeting generation (English and Mandarin)
-- News summarisation from CNA RSS — 2 sentences per item, local context
-- Conversational voice reply to senior's spoken input
-- Sentiment analysis on voice transcripts:
-  Return a JSON object: `{ "score": 0-100, "label": "positive|neutral|low|distressed" }`
-- Use `google-generativeai` Python SDK on the backend
-- Model: `gemini-2.5-pro` for complex tasks, `gemini-2.0-flash` for fast replies
-
-### Whisper (OpenAI — transcription only)
-- Transcribe senior's voice recording from MediaRecorder audio blob
-- Send as multipart form to OpenAI Whisper endpoint
-- Return transcript string to Gemini for reply generation
+### OpenAI
+- Morning spoken script generation via the Responses API.
+- Default morning model: `gpt-5.4-mini`.
+- Morning fallback model: `gpt-5-nano` when access or model availability fails.
+- Voice reply and sentiment generation: `gpt-5-nano`.
+- Voice transcription: `whisper-1`.
+- Morning image generation: `gpt-image-2-2026-04-21`.
+- Always keep non-AI fallbacks for senior-facing flows so the morning screen
+  can still render if an external service is unavailable.
 
 ### ElevenLabs (All TTS output)
 - Morning greeting spoken aloud on screen load
 - News card read aloud on 🔊 tap
 - Voice reply to senior's spoken input
 - Medication and appointment reminder announcements
-- Use `elevenlabs` Python SDK
+- Use the ElevenLabs HTTP API from Next.js API routes
 - Select a warm, unhurried voice — not a young tech assistant voice
 - Language: match senior's profile language setting
 
-### Fal (Image generation)
-- Daily morning illustration — generated once per morning per senior
-  Prompt template: "Soft watercolour illustration, warm pastel colours,
-  Singapore context, [weather condition] morning, [mood hint from yesterday],
-  cosy and cheerful, no text, suitable for elderly audience"
-- Medication label scan — multimodal input, extract name and dosage as JSON
-- Onboarding sticker generation — run once during caregiver setup,
-  save 5 static files to Supabase Storage, never regenerate at runtime
-  Style: "Soft watercolour round character, warm pastel, simple and clear,
-  elderly-friendly, Singapore cultural warmth"
-
-### LiteLLM (Fallback routing)
-- Wrap all LLM calls in LiteLLM so the provider can be swapped without
-  rewriting service logic
-- Primary: Gemini. Fallback: OpenAI GPT-4o if Gemini credits run out
+### Static and Cached Visuals
+- Mood stickers are static SVG sets in `public/stickers`.
+- Daily theme backgrounds live in `public/daily-theme-*.png`.
+- Generated morning images are cached in Supabase Storage and `daily_images`.
+- Do not regenerate stickers at runtime.
 
 ---
 
@@ -300,48 +288,37 @@ push_subscriptions (
 ```
 /
 ├── app/
+│   ├── api/
+│   │   ├── morning/        # Spoken script generation
+│   │   ├── voice/          # Whisper, reply, sentiment, ElevenLabs
+│   │   ├── tts/            # ElevenLabs-only text-to-speech
+│   │   ├── mood/           # Mood log writes
+│   │   ├── push/           # Web push subscribe/send
+│   │   └── morning-image/  # Cached/generated image routes
 │   ├── s/[token]/          # Senior PWA — fullscreen
 │   │   └── page.tsx
 │   ├── setup/              # Caregiver setup wizard
-│   │   ├── page.tsx        # Step router
-│   │   └── steps/          # Step1.tsx through Step5.tsx
-│   └── dashboard/[id]/     # Caregiver dashboard
-│       ├── page.tsx
-│       └── tabs/           # Today.tsx, Trends.tsx, Memories.tsx
+│   │   ├── page.tsx
+│   │   ├── SetupWizard.tsx
+│   │   └── _components/
+│   ├── dashboard/[id]/     # Caregiver dashboard
+│   │   ├── page.tsx
+│   │   └── DashboardView.tsx
+│   ├── generate/           # Demo generator page
+│   └── generator/          # Supabase helper page
 ├── components/
-│   ├── senior/             # Large-text, high-contrast senior UI
-│   │   ├── MorningCard.tsx
-│   │   ├── TalkButton.tsx
-│   │   ├── MoodStickerRow.tsx
-│   │   ├── ReminderCard.tsx
-│   │   └── NewsCard.tsx
-│   ├── caregiver/          # Standard dashboard components
-│   │   ├── MoodChart.tsx
-│   │   ├── SentimentChart.tsx
-│   │   ├── VoiceMemoryItem.tsx
-│   │   └── AlertBanner.tsx
-│   └── ui/                 # shadcn/ui + v0-generated base components
+│   └── ui/                 # shadcn/ui primitives
 ├── lib/
-│   ├── ai/
-│   │   ├── gemini.ts       # Greeting, summarisation, sentiment, reply
-│   │   ├── elevenlabs.ts   # TTS for all spoken output
-│   │   ├── fal.ts          # Illustration + medication scan
-│   │   └── whisper.ts      # Voice transcription
-│   ├── push/
-│   │   ├── vapid.ts        # VAPID key helpers
-│   │   └── service-worker/ # SW registration + push handler
+│   ├── morning-designs.ts  # Morning image theme prompts
+│   ├── mood-stickers.ts    # Sticker metadata
+│   ├── morning-image-cache.ts
 │   └── supabase/
 │       ├── client.ts       # Browser client
-│       ├── server.ts       # Server client
-│       └── queries.ts      # Typed query helpers
-├── backend/                # Python FastAPI (if needed alongside Next.js API routes)
-│   ├── routers/
-│   ├── services/
-│   ├── schemas/
-│   └── prompts.py          # All LLM prompt templates as string constants
+│       └── server.ts       # Server/service-role client
 ├── public/
-│   └── stickers/           # 5 pre-generated sticker PNGs (static, never regenerate)
-├── prompts/                # Prompt templates mirrored for frontend use if needed
+│   ├── stickers/           # Static sticker SVG sets
+│   ├── daily-theme-*.png   # Theme backgrounds
+│   └── sw.js               # Service worker
 └── AGENTS.md               # This file
 ```
 
@@ -351,15 +328,15 @@ push_subscriptions (
 
 | Layer           | Choice                                              |
 |-----------------|-----------------------------------------------------|
-| Frontend        | Next.js 15 (App Router), React, TypeScript strict   |
+| Frontend        | Next.js 16 (App Router), React 19, TypeScript strict|
 | Styling         | Tailwind CSS v4, shadcn/ui, v0 for component gen    |
-| Backend         | Next.js API Routes (primary) + Python FastAPI (AI)  |
+| Backend         | Next.js API Routes                                  |
 | Database        | Supabase (PostgreSQL + Storage + Edge Functions)    |
-| Package mgmt    | pnpm (frontend), uv (backend)                       |
-| Image gen       | Fal (Flux model)                                    |
-| LLM             | Gemini 2.5 Pro via LiteLLM (OpenAI as fallback)     |
-| TTS             | ElevenLabs                                          |
-| Transcription   | OpenAI Whisper                                      |
+| Package mgmt    | pnpm                                                |
+| Image gen       | OpenAI `gpt-image-2-2026-04-21`                     |
+| LLM             | OpenAI `gpt-5.4-mini` default, `gpt-5-nano` fallback|
+| TTS             | ElevenLabs HTTP API                                 |
+| Transcription   | OpenAI `whisper-1`                                  |
 | Push            | Web Push API + web-push library + Supabase cron     |
 | Deploy          | Vercel (frontend + API routes)                      |
 | QR code         | qrcode.react                                        |
@@ -386,12 +363,11 @@ push_subscriptions (
 - Senior-facing components: minimum 18px text, minimum 48px tap targets,
   warm colour palette, no small icons without labels.
 
-### Backend (Python / FastAPI)
-- Modular structure: separate `routers`, `schemas`, `models`, `services`,
-  `dependencies`.
-- Use `async def` for I/O bound routes. Use `def` for CPU bound routes.
-- Strictly type all arguments and return values with type hints and Pydantic.
-- Keep routers thin — move all logic to `services/`.
+### Backend (Next.js API Routes)
+- Keep route handlers thin and typed.
+- Validate request payloads before calling external services or Supabase.
+- Wrap OpenAI, ElevenLabs, web-push, and Supabase calls in try/catch with
+  senior-friendly fallbacks where the senior PWA depends on the response.
 
 ---
 

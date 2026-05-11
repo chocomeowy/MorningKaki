@@ -2,7 +2,7 @@
 
 > A daily AI companion PWA for Singapore seniors, paired with a caregiver setup wizard and dashboard for their adult children.
 
-MorningKaki bridges the digital divide for seniors by removing the friction of app stores, logins, and complex navigation. Every morning, the senior receives a personalised greeting, a beautiful daily illustration, local news, and reminders—all spoken aloud in their preferred language. Caregivers get peace of mind through a quiet daily summary, mood trends, and saved voice memories. 
+MorningKaki bridges the digital divide for seniors by removing the friction of app stores, logins, and complex navigation. Every morning, the senior receives a personalised greeting, a cached or AI-generated daily illustration, local news, and reminders, all spoken aloud in their preferred language. Caregivers get peace of mind through a quiet daily summary, mood trends, and saved voice memories.
 
 Just a home screen icon and a tap. No fuss.
 
@@ -33,14 +33,14 @@ Standard web application interface for adult children to configure and monitor.
 
 | Layer           | Choice                                              |
 |-----------------|-----------------------------------------------------|
-| **Frontend**    | Next.js 15 (App Router), React 19, TypeScript       |
+| **Frontend**    | Next.js 16 (App Router), React 19, TypeScript       |
 | **Styling**     | Tailwind CSS v4, shadcn/ui                          |
-| **Backend**     | Next.js API Routes (primary) + Python FastAPI       |
-| **Database**    | Supabase (PostgreSQL + Storage + Edge Functions)    |
-| **Image Gen**   | Fal AI (Flux model)                                 |
-| **LLM**         | Gemini 2.5 Pro (via LiteLLM, OpenAI fallback)       |
-| **TTS**         | ElevenLabs                                          |
-| **Transcription**| OpenAI Whisper                                     |
+| **Backend**     | Next.js API Routes                                  |
+| **Database**    | Supabase (PostgreSQL + Storage)                     |
+| **Image Gen**   | OpenAI `gpt-image-2-2026-04-21`                     |
+| **LLM**         | OpenAI `gpt-5.4-mini` default, `gpt-5-nano` fallback|
+| **TTS**         | ElevenLabs HTTP API                                 |
+| **Transcription**| OpenAI `whisper-1`                                 |
 | **Push Notifs** | Web Push API + `web-push` + Supabase cron           |
 | **Charts**      | Recharts                                            |
 
@@ -48,10 +48,11 @@ Standard web application interface for adult children to configure and monitor.
 
 ## ✨ Key Features
 
-- **Multilingual Support**: Fully togglable between English, Mandarin, Hokkien, Cantonese, and Malay. All text and AI voice (TTS) adapts seamlessly.
-- **AI Medication Scanner**: Caregivers can take a photo of a pill bottle, and Fal's multimodal AI extracts the medication name and dosage to automatically populate reminders.
-- **Sentiment & Mood Tracking**: Analyzes the senior's daily voice check-ins to plot sentiment scores over time, alerting caregivers to negative streaks.
-- **Web Push Automations**: Supabase cron jobs send daily web push notifications precisely at the senior's preferred wake-up time.
+- **Multilingual Support**: Senior flow supports English, Mandarin, Hokkien legacy selection, and Cantonese-style Chinese output, with matching TTS requests.
+- **Morning Script Generation**: `/api/morning` combines NEA weather, CNA RSS, reminders, and medication notes into a spoken script with a local Singapore tone.
+- **Daily Images**: `/api/morning-image/generate` creates OpenAI theme images and caches them in Supabase; `/api/morning-image` falls back to bundled static art.
+- **Sentiment & Mood Tracking**: Analyzes the senior's daily voice check-ins and stores mood, transcript, sentiment, and private audio metadata.
+- **Web Push Demo Flow**: Web Push subscriptions are saved to Supabase and `/api/push/send` can manually trigger demo notifications.
 - **Zero-Login PWA**: Uses tokenized URLs (`/s/[token]`) to resolve user profiles instantly, removing the need for passwords or OTPs.
 
 ---
@@ -62,7 +63,8 @@ Standard web application interface for adult children to configure and monitor.
 - Node.js (v20+)
 - `pnpm` (Package manager)
 - Supabase account (for DB & Auth)
-- API Keys for Gemini, ElevenLabs, Fal, and OpenAI.
+- API keys for OpenAI and ElevenLabs.
+- Supabase project keys for profile, reminder, mood, image, and voice-memory storage.
 
 ### 1. Clone the repository
 ```bash
@@ -81,10 +83,9 @@ Create a `.env.local` file in the root directory:
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
-GEMINI_API_KEY=your_gemini_key
 ELEVENLABS_API_KEY=your_elevenlabs_key
-FAL_KEY=your_fal_key
 OPENAI_API_KEY=your_openai_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
 # Web Push VAPID Keys
 VAPID_PUBLIC_KEY=your_vapid_public
@@ -107,21 +108,21 @@ Navigate to `http://localhost:3000` to see the landing page.
 │   ├── s/[token]/          # Senior PWA View
 │   ├── setup/              # Caregiver Setup Wizard
 │   ├── dashboard/[id]/     # Caregiver Dashboard
+│   ├── api/                # Morning, voice, TTS, push, mood, image routes
 │   └── page.tsx            # Dev Landing Page
 ├── components/
 │   ├── ui/                 # shadcn/ui components
-│   └── ...                 # Feature-specific components
 ├── lib/
-│   ├── ai/                 # Gemini, ElevenLabs, Fal, Whisper clients
-│   ├── push/               # Web Push logic
-│   └── supabase/           # DB clients and queries
-└── public/                 # Static assets (Stickers, Illustrations)
+│   ├── morning-designs.ts  # Morning image theme prompts
+│   ├── mood-stickers.ts    # Sticker metadata
+│   └── supabase/           # Browser and server clients
+└── public/                 # Static assets, stickers, PWA icons, service worker
 ```
 
 ---
 
 ## 🛡 Safety & Privacy
-- **No Direct Database Writes**: UI never writes directly to DB without confirmation.
+- **No Secrets in Git**: Keep `.env`, `.env.local`, API keys, service role keys, and tokens out of commits.
 - **Audio Privacy**: Senior voice logs are private. Caregiver dashboard requires auth before playing memory snippets.
 - **Sentiment Sensitivity**: Handled as personal health data.
 
