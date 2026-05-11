@@ -188,6 +188,10 @@ Illustration does not regenerate on language toggle.
 - Mood stickers are static SVG sets in `public/stickers`.
 - Daily theme backgrounds live in `public/daily-theme-*.png`.
 - Generated morning images are cached in Supabase Storage and `daily_images`.
+- Vercel cron runs at `5 16 * * *` UTC, which is 00:05 Singapore time, to
+  generate the new local-day image early.
+- `/api/morning-image` should generate and cache today's missing image before
+  returning older cached art or static fallback art.
 - Do not regenerate stickers at runtime.
 
 ---

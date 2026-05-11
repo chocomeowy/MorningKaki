@@ -32,7 +32,14 @@ const designThemeMap: Record<string, MorningImageTheme> = {
 };
 
 export function getSingaporeDateString(date = new Date()) {
-  return date.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+  }).formatToParts(date);
+  const valueFor = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${valueFor("year")}-${valueFor("month")}-${valueFor("day")}`;
 }
 
 export function getThemeForDesign(designId: string | null | undefined) {

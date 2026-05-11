@@ -50,7 +50,7 @@ Standard web application interface for adult children to configure and monitor.
 
 - **Multilingual Support**: Senior flow supports English, Mandarin, Hokkien legacy selection, and Cantonese-style Chinese output, with matching TTS requests.
 - **Morning Script Generation**: `/api/morning` combines NEA weather, CNA RSS, reminders, and medication notes into a spoken script with a local Singapore tone.
-- **Daily Images**: `/api/morning-image/generate` creates OpenAI theme images and caches them in Supabase; `/api/morning-image` falls back to bundled static art.
+- **Daily Images**: Vercel cron generates OpenAI theme images after midnight Singapore time; `/api/morning-image` self-heals by generating today's missing image before falling back to older or bundled art.
 - **Sentiment & Mood Tracking**: Analyzes the senior's daily voice check-ins and stores mood, transcript, sentiment, and private audio metadata.
 - **Web Push Demo Flow**: Web Push subscriptions are saved to Supabase and `/api/push/send` can manually trigger demo notifications.
 - **Zero-Login PWA**: Uses tokenized URLs (`/s/[token]`) to resolve user profiles instantly, removing the need for passwords or OTPs.

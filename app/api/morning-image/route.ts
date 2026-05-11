@@ -4,6 +4,7 @@ import {
   getSingaporeDateString,
   getThemeForDesign,
 } from "@/lib/morning-image-cache";
+import { generateAndCacheMorningImage } from "@/lib/morning-image-generator";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -31,6 +32,16 @@ export async function GET(request: Request) {
       });
     }
 
+    try {
+      const generatedImage = await generateAndCacheMorningImage(theme.name);
+      return NextResponse.json({
+        ...generatedImage,
+        cacheDateString: generatedImage.dateString,
+        source: "generated",
+      });
+    } catch {
+      // If generation fails, keep the senior flow usable with older or static art.
+    }
     const { data: cachedImages } = await supabase
       .from("daily_images")
       .select("image_url, date_string")
