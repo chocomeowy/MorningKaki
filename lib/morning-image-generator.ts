@@ -64,7 +64,6 @@ export async function generateAndCacheMorningImage(themeName: MorningImageTheme)
     theme: theme.name,
     date_string: dateString,
     image_url: imageUrl,
-    storage_path: storagePath,
   };
   const { error: cacheError } = await supabase
     .from("daily_images")
@@ -88,7 +87,6 @@ async function saveDailyImageWithoutUniqueConstraint(
     theme: MorningImageTheme;
     date_string: string;
     image_url: string;
-    storage_path: string;
   },
 ) {
   const { data: existingRows, error: lookupError } = await supabase
