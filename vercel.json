@@ -3,6 +3,14 @@
     {
       "path": "/api/cron/morning-images",
       "schedule": "5 16 * * *"
+    },
+    {
+      "path": "/api/cron/morning-images/gardens",
+      "schedule": "12 16 * * *"
+    },
+    {
+      "path": "/api/cron/morning-images/calm",
+      "schedule": "19 16 * * *"
     }
   ]
 }
