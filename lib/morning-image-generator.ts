@@ -60,14 +60,19 @@ export async function generateAndCacheMorningImage(themeName: MorningImageTheme)
     .getPublicUrl(storagePath);
 
   const imageUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
-  const { error: cacheError } = await supabase.from("daily_images").upsert({
+  const cacheRow = {
     theme: theme.name,
     date_string: dateString,
     image_url: imageUrl,
     storage_path: storagePath,
-  }, { onConflict: "theme, date_string" });
+  };
+  const { error: cacheError } = await supabase
+    .from("daily_images")
+    .upsert(cacheRow, { onConflict: "theme, date_string" });
 
-  if (cacheError) throw cacheError;
+  if (cacheError) {
+    await saveDailyImageWithoutUniqueConstraint(supabase, cacheRow);
+  }
 
   return {
     imageUrl,
@@ -75,6 +80,40 @@ export async function generateAndCacheMorningImage(themeName: MorningImageTheme)
     dateString,
     storagePath,
   };
+}
+
+async function saveDailyImageWithoutUniqueConstraint(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  cacheRow: {
+    theme: MorningImageTheme;
+    date_string: string;
+    image_url: string;
+    storage_path: string;
+  },
+) {
+  const { data: existingRows, error: lookupError } = await supabase
+    .from("daily_images")
+    .select("id")
+    .eq("theme", cacheRow.theme)
+    .eq("date_string", cacheRow.date_string)
+    .limit(1);
+
+  if (lookupError) throw lookupError;
+
+  const existingId = existingRows?.[0]?.id;
+  if (existingId) {
+    const { error: updateError } = await supabase
+      .from("daily_images")
+      .update(cacheRow)
+      .eq("id", existingId);
+    if (updateError) throw updateError;
+    return;
+  }
+
+  const { error: insertError } = await supabase
+    .from("daily_images")
+    .insert(cacheRow);
+  if (insertError) throw insertError;
 }
 
 async function ensurePublicImageBucket(supabase: ReturnType<typeof createServerSupabaseClient>) {

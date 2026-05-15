@@ -7,6 +7,8 @@ interface GenerateMorningImageRequest {
   theme?: string;
 }
 
+export const maxDuration = 300;
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as GenerateMorningImageRequest;
@@ -19,7 +21,29 @@ export async function POST(request: Request) {
       source: "manual",
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to generate replacement image";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const message = getGenerationErrorMessage(error);
+    return NextResponse.json({
+      error: message,
+      code: getGenerationErrorCode(message),
+    }, { status: 500 });
   }
+}
+
+function getGenerationErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) {
+    return String(error.message);
+  }
+
+  return "Failed to generate replacement image";
+}
+
+function getGenerationErrorCode(message: string) {
+  const lowerMessage = message.toLowerCase();
+  if (lowerMessage.includes("timed out") || lowerMessage.includes("timeout")) return "IMAGE_TIMEOUT";
+  if (lowerMessage.includes("api key") || lowerMessage.includes("unauthorized")) return "OPENAI_CONFIG";
+  if (lowerMessage.includes("model")) return "IMAGE_MODEL";
+  if (lowerMessage.includes("constraint") || lowerMessage.includes("conflict")) return "IMAGE_CACHE_CONSTRAINT";
+  if (lowerMessage.includes("supabase") || lowerMessage.includes("storage")) return "IMAGE_STORAGE";
+  return "IMAGE_GENERATION_FAILED";
 }
