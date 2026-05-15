@@ -85,7 +85,13 @@ export async function POST(request: Request) {
           ].join("\n"),
         },
       ];
-    const generatedScript = await createMorningScript(messages);
+    let generatedScript: string | undefined;
+    try {
+      generatedScript = await createMorningScript(messages);
+    } catch {
+      generatedScript = undefined;
+    }
+
     const spokenScript = sanitizeSpokenScript(generatedScript) || getFallbackSpokenScript({
       language,
       nickname,
@@ -225,7 +231,7 @@ async function createMorningScript(messages: MorningMessage[]) {
       model: MORNING_SCRIPT_MODEL,
       input,
       max_output_tokens: 8000,
-      reasoning: { effort: "minimal" },
+      reasoning: { effort: "low" },
       text: { verbosity: "high" },
     });
 
@@ -237,7 +243,7 @@ async function createMorningScript(messages: MorningMessage[]) {
         model: MORNING_SCRIPT_FALLBACK_MODEL,
         input,
         max_output_tokens: 8000,
-        reasoning: { effort: "minimal" },
+        reasoning: { effort: "low" },
         text: { verbosity: "high" },
       });
 
