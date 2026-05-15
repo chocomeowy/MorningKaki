@@ -10,18 +10,20 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const themeName = getThemeForDesign(searchParams.get("designId"));
+  const preloadedOnly = searchParams.get("preloadedOnly") === "1";
   const theme = getMorningImageTheme(themeName);
   const dateString = getSingaporeDateString();
 
   try {
     const supabase = createServerSupabaseClient();
-    const { data: todayImage, error } = await supabase
+    const { data: todayImages, error } = await supabase
       .from("daily_images")
       .select("image_url, date_string")
       .eq("theme", theme.name)
       .eq("date_string", dateString)
-      .single();
+      .limit(1);
 
+    const todayImage = todayImages?.find((item) => item.image_url);
     if (todayImage?.image_url && !error) {
       return NextResponse.json({
         imageUrl: todayImage.image_url,
@@ -32,16 +34,19 @@ export async function GET(request: Request) {
       });
     }
 
-    try {
-      const generatedImage = await generateAndCacheMorningImage(theme.name);
-      return NextResponse.json({
-        ...generatedImage,
-        cacheDateString: generatedImage.dateString,
-        source: "generated",
-      });
-    } catch {
-      // If generation fails, keep the senior flow usable with older or static art.
+    if (!preloadedOnly) {
+      try {
+        const generatedImage = await generateAndCacheMorningImage(theme.name);
+        return NextResponse.json({
+          ...generatedImage,
+          cacheDateString: generatedImage.dateString,
+          source: "generated",
+        });
+      } catch {
+        // If generation fails, keep the senior flow usable with older or static art.
+      }
     }
+
     const { data: cachedImages } = await supabase
       .from("daily_images")
       .select("image_url, date_string")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SetupWizard } from "./setup/SetupWizard";
 
@@ -14,13 +14,21 @@ function isSafeReturnPath(path: string | null) {
 
 export default function Home() {
   const router = useRouter();
+  const [checkedReturnPath, setCheckedReturnPath] = useState(false);
 
   useEffect(() => {
     const returnPath = window.localStorage.getItem(returnPathKey);
     if (returnPath && isSafeReturnPath(returnPath) && returnPath !== window.location.pathname) {
       router.replace(returnPath);
+      return;
     }
+
+    setCheckedReturnPath(true);
   }, [router]);
+
+  if (!checkedReturnPath) {
+    return <main className="min-h-screen bg-[#fff8ed]" />;
+  }
 
   return <SetupWizard />;
 }

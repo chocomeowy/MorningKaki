@@ -41,7 +41,7 @@ interface MorningImageData {
   imageUrl: string;
   theme: string;
   dateString: string;
-  source: "storage" | "rotated-cache" | "static";
+  source: "storage" | "generated" | "rotated-cache" | "static";
 }
 
 type NarrationStatus = "idle" | "generatingText" | "generatingAudio" | "playing" | "failed";
@@ -179,7 +179,7 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
   const fallbackImage = design.heroImage ?? fallbackTheme.fallbackImage;
   const [morningImage, setMorningImage] = useState<MorningImageData | null>(null);
   const [morningData, setMorningData] = useState<MorningData | null>(null);
-  const [isImageLoading, setIsImageLoading] = useState(true);
+  const [isImageLoading, setIsImageLoading] = useState(false);
   const [narrationStatus, setNarrationStatus] = useState<NarrationStatus>("idle");
   const [narrationError, setNarrationError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -309,9 +309,8 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
     let cancelled = false;
 
     async function loadMorningImage() {
-      setIsImageLoading(true);
       try {
-        const response = await fetch(`/api/morning-image?designId=${encodeURIComponent(design.id)}`);
+        const response = await fetch(`/api/morning-image?designId=${encodeURIComponent(design.id)}&preloadedOnly=1`);
         if (!response.ok) throw new Error("Image lookup failed");
         const data = (await response.json()) as MorningImageData;
         if (!cancelled) setMorningImage(data);
