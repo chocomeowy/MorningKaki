@@ -1,20 +1,9 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "dummy_key_to_bypass_build_error",
-});
 
 const voiceBucket = "voice-memories";
 const CANTONESE_VOICE_ID = "cHDwXsKG0qHMNLIjOusN";
 const DEFAULT_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
-
-interface VoiceAiOutput {
-  reply?: string;
-  sentiment_score?: number;
-  sentiment_label?: string;
-}
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Voice processing failed";
@@ -25,8 +14,8 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const audioFile = formData.get("audio") as File;
     const seniorId = formData.get("seniorId") as string;
-    const nickname = formData.get("nickname") as string || "Ah Gong";
-    const language = formData.get("language") as string || "en";
+    const nickname = (formData.get("nickname") as string) || "Ah Gong";
+    const language = (formData.get("language") as string) || "en";
     const shouldPersist = Boolean(seniorId && seniorId !== "demo");
 
     if (!audioFile) {
@@ -51,50 +40,22 @@ export async function POST(request: Request) {
       if (uploadError) throw uploadError;
     }
 
-    // 1. Transcribe audio using Whisper
-    const transcription = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: "whisper-1",
-    });
+    // 1. In showcase mode, we bypass OpenAI Whisper and LLM completion to use 0 tokens.
+    // We select a high-fidelity warm mock transcript and reply based on the senior's language.
+    let transcript = "Good morning! Just checking in.";
+    let replyText = `Good morning, ${nickname}! It is so wonderful to hear your voice. I hope you have a beautiful and peaceful day today! ❤️`;
+    let sentimentScore = 95;
+    let sentimentLabel = "positive";
 
-    const transcript = transcription.text;
-
-    if (!transcript.trim()) {
-      return NextResponse.json({ error: "Could not hear any speech" }, { status: 400 });
+    if (language === "zh") {
+      transcript = "早上好！我来打个卡。";
+      replyText = `早上好，${nickname}！听到您的声音真高兴。祝您今天心情愉快，平安健康！❤️`;
+    } else if (language === "cantonese" || language === "hokkien") {
+      transcript = "早晨！我嚟打個卡。";
+      replyText = `早晨，${nickname}！聽到您嘅聲音真係好開心。祝您今日開開心心，身體健康！❤️`;
     }
 
-    // 2. Generate Reply and Sentiment using GPT-5-nano
-    const chatResponse = await openai.chat.completions.create({
-      model: "gpt-5-nano",
-      messages: [
-        {
-          role: "system",
-          content: `You are a warm, caring companion for an elderly person named ${nickname} in Singapore.
-          They just spoke to you. Write a short, empathetic, conversational response (1-2 sentences) in ${getReplyLanguage(language)}.
-          Also, analyze their sentiment.
-          
-          You MUST respond in exact JSON format:
-          {
-            "reply": "Your warm response here",
-            "sentiment_score": 85, 
-            "sentiment_label": "positive|neutral|low|distressed"
-          }`,
-        },
-        {
-          role: "user",
-          content: transcript,
-        },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 180,
-    });
-
-    const aiOutput = JSON.parse(chatResponse.choices[0].message.content || "{}") as VoiceAiOutput;
-    const replyText = aiOutput.reply || "I'm always here to listen.";
-    const sentimentScore = aiOutput.sentiment_score || 50;
-    const sentimentLabel = aiOutput.sentiment_label || "neutral";
-
-    // 3. Synthesize Voice with ElevenLabs
+    // 2. Synthesize Voice with ElevenLabs
     let audioBuffer: ArrayBuffer | null = null;
     const elevenLabsKey = process.env.ELEVENLABS_API_KEY;
     
@@ -123,7 +84,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. Save the log to Supabase
+    // 3. Save the log to Supabase (keeps dashboard/memories interactive!)
     if (shouldPersist) {
       await supabase.from("voice_logs").insert({
         senior_id: seniorId,
@@ -135,7 +96,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // 5. Return the audio to play on the frontend!
+    // 4. Return the audio to play on the frontend!
     if (audioBuffer) {
       return new NextResponse(audioBuffer, {
         headers: {
@@ -171,15 +132,6 @@ async function ensureVoiceBucket(supabase: ReturnType<typeof createServerSupabas
   if (createError && createError.message !== "The resource already exists") {
     throw createError;
   }
-}
-
-function getReplyLanguage(language: string) {
-  if (language === "zh") return "Mandarin Chinese";
-  if (language === "cantonese" || language === "hokkien") {
-    return "Traditional Chinese with natural Cantonese phrasing";
-  }
-
-  return "English";
 }
 
 function getVoiceId(language: string) {

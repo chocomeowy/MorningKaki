@@ -3,20 +3,21 @@ import {
   getMorningImageTheme,
   getSingaporeDateString,
   getThemeForDesign,
+  getRotationIndex,
 } from "@/lib/morning-image-cache";
-import { generateAndCacheMorningImage } from "@/lib/morning-image-generator";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const themeName = getThemeForDesign(searchParams.get("designId"));
-  const preloadedOnly = searchParams.get("preloadedOnly") === "1";
   const theme = getMorningImageTheme(themeName);
   const dateString = getSingaporeDateString();
 
   try {
     const supabase = createServerSupabaseClient();
-    const { data: todayImages, error } = await supabase
+    
+    // 1. Try to find today's image in the database for this specific theme
+    const { data: todayImages, error: todayError } = await supabase
       .from("daily_images")
       .select("image_url, date_string")
       .eq("theme", theme.name)
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
       .limit(1);
 
     const todayImage = todayImages?.find((item) => item.image_url);
-    if (todayImage?.image_url && !error) {
+    if (todayImage?.image_url && !todayError) {
       return NextResponse.json({
         imageUrl: todayImage.image_url,
         theme: theme.name,
@@ -34,36 +35,27 @@ export async function GET(request: Request) {
       });
     }
 
-    if (!preloadedOnly) {
-      try {
-        const generatedImage = await generateAndCacheMorningImage(theme.name);
-        return NextResponse.json({
-          ...generatedImage,
-          cacheDateString: generatedImage.dateString,
-          source: "generated",
-        });
-      } catch {
-        // If generation fails, keep the senior flow usable with older or static art.
-      }
-    }
-
-    const { data: cachedImages } = await supabase
+    // 2. Rotate through existing images in the database
+    const { data: cachedImages, error: cacheError } = await supabase
       .from("daily_images")
-      .select("image_url, date_string")
-      .eq("theme", theme.name)
+      .select("image_url, date_string, theme")
       .order("date_string", { ascending: true });
 
-    const reusableImages = (cachedImages ?? []).filter((item) => item.image_url);
+    if (!cacheError && cachedImages && cachedImages.length > 0) {
+      const allImages = cachedImages.filter((item) => item.image_url);
+      if (allImages.length > 0) {
+        const themeImages = allImages.filter((item) => item.theme === theme.name);
+        const reusableImages = themeImages.length > 0 ? themeImages : allImages;
 
-    if (reusableImages.length > 0) {
-      const rotatedImage = reusableImages[getRotationIndex(dateString, reusableImages.length)];
-      return NextResponse.json({
-        imageUrl: rotatedImage.image_url,
-        theme: theme.name,
-        dateString,
-        cacheDateString: rotatedImage.date_string,
-        source: "rotated-cache",
-      });
+        const rotatedImage = reusableImages[getRotationIndex(dateString, reusableImages.length)];
+        return NextResponse.json({
+          imageUrl: rotatedImage.image_url,
+          theme: theme.name,
+          dateString,
+          cacheDateString: rotatedImage.date_string,
+          source: "rotated-cache",
+        });
+      }
     }
   } catch {
     // Fall through to static image so the senior screen never waits on storage.
@@ -76,9 +68,4 @@ export async function GET(request: Request) {
     cacheDateString: null,
     source: "static",
   });
-}
-
-function getRotationIndex(dateString: string, imageCount: number) {
-  const dayOfMonth = Number(dateString.split("-")[2] ?? "1");
-  return Math.max(dayOfMonth - 1, 0) % imageCount;
 }

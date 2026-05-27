@@ -54,3 +54,9 @@ export function getMorningImageTheme(theme: string | null | undefined) {
 export function getStoragePath(dateString: string, theme: MorningImageTheme) {
   return `daily-images/${dateString}/${theme}.png`;
 }
+
+export function getRotationIndex(dateString: string, imageCount: number) {
+  const dayOfMonth = Number(dateString.split("-")[2] ?? "1");
+  return Math.max(dayOfMonth - 1, 0) % imageCount;
+}
+

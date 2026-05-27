@@ -1,12 +1,4 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "dummy_key_to_bypass_build_error",
-});
-
-const MORNING_SCRIPT_MODEL = "gpt-5.4-mini";
-const MORNING_SCRIPT_FALLBACK_MODEL = "gpt-5-nano";
 
 interface MorningRequest {
   designId?: string;
@@ -17,11 +9,6 @@ interface MorningRequest {
   medicines?: string[];
   reminders?: string[];
   localNews?: string[];
-}
-
-interface MorningMessage {
-  role: "system" | "user";
-  content: string;
 }
 
 const CNA_RSS_URL = "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=10416";
@@ -42,57 +29,10 @@ export async function POST(request: Request) {
     const localNews = await getSingaporeNews(body.localNews);
 
     const todayDay = new Date().toLocaleDateString('en-SG', { weekday: 'long', timeZone: 'Asia/Singapore' });
-    const todayDate = new Date().toLocaleDateString("en-SG", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      timeZone: "Asia/Singapore",
-    });
 
-    // 1. Generate the personalized spoken script, with nano fallback if unavailable.
-    const messages: MorningMessage[] = [
-        {
-          role: "system",
-          content: [
-            "You write spoken scripts for ElevenLabs text-to-speech.",
-            "Audience: Singapore seniors.",
-            "Tone: enthusiastic, warm, caring, upbeat, local, and respectful.",
-            "Factual accuracy is more important than sounding polished.",
-            "Avoid emojis, markdown, bullet points, stage directions, URLs, and hard-to-read symbols.",
-            "Do not include bracketed delivery cues like [enthusiastic], and do not say the word enthusiastic aloud.",
-            "Keep it concise enough to read aloud in about 75 to 100 seconds.",
-          ].join(" "),
-        },
-        {
-          role: "user",
-          content: [
-            `Write one spoken morning script for ${nickname}.`,
-            `Use the senior nickname exactly as written: ${nickname}. Do not translate, romanise, or rename it.`,
-            `Language or dialect: ${getLanguageInstruction(language)}.`,
-            `Today is ${todayDay}, ${todayDate}.`,
-            `Weather: ${weather} in Singapore.`,
-            `Medicine reminders: ${medicines.join("; ")}`,
-            `Appointments and reminders: ${reminders.join("; ")}`,
-            `Local news from Channel NewsAsia RSS: ${localNews.join("; ")}`,
-            "Include these parts naturally: good morning greeting, date/day, NEA weather, medicine reminder, appointment/reminder if any, at least three local news summaries when available, and a kind closing wish.",
-            "Do not say vague lines like 'there is local news' or 'I have news'. State the actual news plainly and gently.",
-            "Do not invent appointment locations, clinics, documents, symptoms, or medicine instructions beyond the provided reminders.",
-            "For appointments and reminders, repeat only the provided reminder text and time. Do not add what to bring, where to go, or medical advice unless it is explicitly provided.",
-            "For news, preserve names and offices accurately. PM Wong means Lawrence Wong, not Lee Hsien Loong. If a Chinese name is uncertain, keep the English name.",
-            "Keep Singapore place names like Toa Payoh, CNA, NEA, Canvas, IMDA, and CSA exactly as written.",
-            "For Cantonese, write in Traditional Chinese text with natural Hong Kong or Singapore Cantonese phrasing, not English or romanisation.",
-            "If the language or dialect is Mandarin or Cantonese, every sentence must be Chinese text. Translate medicine, weather, reminders, and local news into Chinese. Do not leave English words except the senior nickname and uncertain proper names.",
-          ].join("\n"),
-        },
-      ];
-    let generatedScript: string | undefined;
-    try {
-      generatedScript = await createMorningScript(messages);
-    } catch {
-      generatedScript = undefined;
-    }
-
-    const spokenScript = sanitizeSpokenScript(generatedScript) || getFallbackSpokenScript({
+    // In showcase mode, we bypass OpenAI script generation completely to use 0 tokens.
+    // We construct the spoken script using the high-fidelity local dynamic template.
+    const spokenScript = getFallbackSpokenScript({
       language,
       nickname,
       todayDay,
@@ -195,63 +135,12 @@ function decodeXml(value: string) {
     .trim();
 }
 
-function sanitizeSpokenScript(script: string | undefined) {
-  return script
-    ?.replace(/\[\s*enthusiastic\s*\]/gi, "")
-    .replace(/^\s*\[[^\]]+\]\s*/g, "")
-    .replace(/李显龙总理|李显龙|王瑞杰（Lawrence Wong）|王瑞杰/g, "Lawrence Wong")
-    .replace(/财政部长兼副总理Lawrence Wong|副总理Lawrence Wong/g, "PM Lawrence Wong")
-    .replace(/，请准时出门，带好您的身份证和医疗卡/g, "，请按提醒的时间安排")
-    .replace(/，带好您的身份证和医疗卡/g, "")
-    .replace(/大巴窩|大巴窑|大巴窯/g, "Toa Payoh")
-    .replace(/東北季風過來，|东北季风过来，/g, "")
-    .trim();
-}
-
 function getDisplayGreeting(language: MorningRequest["language"], nickname: string) {
   if (language === "zh" || language === "hokkien" || language === "cantonese") {
     return `早上好，${nickname}`;
   }
 
   return `Good morning, ${nickname}`;
-}
-
-function getLanguageInstruction(language: MorningRequest["language"]) {
-  if (language === "zh") return "Mandarin Chinese, natural Singapore style";
-  if (language === "hokkien") return "Legacy dialect selection; write Cantonese-style Traditional Chinese text because the app now uses the Cantonese voice.";
-  if (language === "cantonese") return "Cantonese-style Traditional Chinese text, warm and natural for Singapore seniors. Do not use English or romanised Cantonese.";
-  return "English with a gentle Singapore tone";
-}
-
-async function createMorningScript(messages: MorningMessage[]) {
-  const input = messages.map((message) => `${message.role.toUpperCase()}:\n${message.content}`).join("\n\n");
-
-  try {
-    const response = await openai.responses.create({
-      model: MORNING_SCRIPT_MODEL,
-      input,
-      max_output_tokens: 8000,
-      reasoning: { effort: "low" },
-      text: { verbosity: "high" },
-    });
-
-    return response.output_text?.trim();
-  } catch (error) {
-    const errorMessage = getErrorMessage(error);
-    if (errorMessage.includes("does not have access") || errorMessage.includes("model_not_found")) {
-      const response = await openai.responses.create({
-        model: MORNING_SCRIPT_FALLBACK_MODEL,
-        input,
-        max_output_tokens: 8000,
-        reasoning: { effort: "low" },
-        text: { verbosity: "high" },
-      });
-
-      return response.output_text?.trim();
-    }
-
-    throw error;
-  }
 }
 
 function getFallbackSpokenScript({
