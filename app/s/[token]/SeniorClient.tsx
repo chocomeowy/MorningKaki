@@ -21,6 +21,13 @@ import {
 import { getMorningImageTheme, getThemeForDesign } from "@/lib/morning-image-cache";
 import { getMoodStickerSrc, type MoodStickerId } from "@/lib/mood-stickers";
 import { supabase } from "@/lib/supabase/client";
+import {
+  getLocalMedications,
+  getLocalReminders,
+  saveLocalMoodLog,
+  saveLocalVoiceLog,
+  saveLocalSubscription
+} from "@/lib/local-db";
 
 interface SeniorProfile {
   id: string;
@@ -204,12 +211,27 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
         return;
       }
 
-      const [mRes, rRes] = await Promise.all([
-        supabase.from("medications").select("*").eq("senior_id", senior.id),
-        supabase.from("reminders").select("*").eq("senior_id", senior.id).gte("remind_at", new Date().toISOString().split('T')[0]),
-      ]);
-      setMeds((mRes.data ?? []) as MedicationRow[]);
-      setRems((rRes.data ?? []) as ReminderRow[]);
+      // Load from local storage first
+      const localMeds = getLocalMedications(senior.id);
+      const localRems = getLocalReminders(senior.id);
+      setMeds(localMeds);
+      setRems(localRems);
+
+      // Attempt Supabase fetch as backup (catch errors silently)
+      try {
+        const [mRes, rRes] = await Promise.all([
+          supabase.from("medications").select("*").eq("senior_id", senior.id),
+          supabase.from("reminders").select("*").eq("senior_id", senior.id).gte("remind_at", new Date().toISOString().split('T')[0]),
+        ]);
+        if (mRes.data && mRes.data.length > 0) {
+          setMeds(mRes.data as MedicationRow[]);
+        }
+        if (rRes.data && rRes.data.length > 0) {
+          setRems(rRes.data as ReminderRow[]);
+        }
+      } catch (err) {
+        console.warn("Supabase loadData failed/skipped:", err);
+      }
       setContextReady(true);
     }
     loadData();
@@ -364,11 +386,14 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
             applicationServerKey: urlBase64ToUint8Array(vapidKey)
           });
           
+          // Save locally
+          saveLocalSubscription(senior.id, subscription);
+
           await fetch('/api/push/subscribe', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ seniorId: senior.id, subscription })
-          });
+          }).catch((e) => console.warn("Push subscription API skipped/failed:", e));
         } catch (err) {
           void err;
         }
@@ -517,12 +542,35 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
       if (res.ok) {
         const contentType = res.headers.get("Content-Type") ?? "";
         if (contentType.includes("application/json")) {
-          await res.json();
+          const data = await res.json();
+          if (senior.id !== "demo") {
+            saveLocalVoiceLog(senior.id, {
+              transcript: data.transcript || "",
+              sentiment_label: data.sentimentLabel || "neutral",
+              sentiment_score: data.sentimentScore || 50,
+              audio_url: null,
+            });
+          }
           return;
         }
 
         const audioBlob = await res.blob();
         const audioUrl = URL.createObjectURL(audioBlob);
+
+        // Retrieve headers for local database logging
+        const transcript = decodeURIComponent(res.headers.get("X-Transcript") || "");
+        const sentimentLabel = res.headers.get("X-Sentiment-Label") || "positive";
+        const sentimentScore = parseInt(res.headers.get("X-Sentiment-Score") || "95", 10);
+
+        if (senior.id !== "demo") {
+          saveLocalVoiceLog(senior.id, {
+            transcript: transcript || "Voice check-in",
+            sentiment_label: sentimentLabel,
+            sentiment_score: sentimentScore,
+            audio_url: audioUrl, // saves local blob URL for playback on same browser
+          });
+        }
+
         if (audioPlayerRef.current) {
           audioPlayerRef.current.src = audioUrl;
           audioPlayerRef.current.play();
@@ -697,15 +745,15 @@ export function SeniorClient({ senior }: { senior: SeniorProfile }) {
     setIsSavingMood(true);
     setMoodSaveError(false);
     try {
-      const response = await fetch("/api/mood", {
+      // 1. Save locally first
+      saveLocalMoodLog(senior.id, moodId);
+
+      // 2. Try to post to API but ignore failures so the app remains interactive
+      await fetch("/api/mood", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seniorId: senior.id, stickerType: moodId }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Mood save failed");
-      }
+      }).catch((err) => console.warn("API mood save failed/skipped:", err));
 
       window.localStorage.setItem(getMoodStorageKey(senior.id), moodId);
       setIsMoodLocked(true);

@@ -25,8 +25,23 @@ export default function GeneratorPage() {
 
   // Fetch all seniors for push testing
   const fetchSeniors = async () => {
-    const { data } = await supabase.from("seniors").select("id, nickname, full_name").limit(10);
-    if (data) setSeniors(data);
+    try {
+      const { getLocalSeniors } = await import("@/lib/local-db");
+      const localSeniors = Object.values(getLocalSeniors());
+      if (localSeniors.length > 0) {
+        setSeniors(localSeniors.map((s) => ({ id: s.id, nickname: s.nickname, full_name: s.full_name })));
+        return;
+      }
+    } catch (err) {
+      console.warn("Local storage lookup failed in generator page:", err);
+    }
+
+    try {
+      const { data } = await supabase.from("seniors").select("id, nickname, full_name").limit(10);
+      if (data) setSeniors(data);
+    } catch (err) {
+      console.warn("Supabase fetchSeniors failed:", err);
+    }
   };
 
   const generateCard = async () => {
@@ -80,10 +95,29 @@ export default function GeneratorPage() {
 
     const executePush = async () => {
       try {
+        let localSubs: any[] = [];
+        try {
+          const { getLocalSubscriptions } = await import("@/lib/local-db");
+          localSubs = getLocalSubscriptions(seniorId);
+        } catch (err) {
+          console.warn("Failed to get local subscriptions:", err);
+        }
+
+        const payload: any = { seniorId, title, body };
+        if (localSubs && localSubs.length > 0) {
+          payload.subscriptions = localSubs.map((sub) => ({
+            endpoint: sub.endpoint,
+            keys: {
+              p256dh: sub.p256dh,
+              auth: sub.auth,
+            },
+          }));
+        }
+
         const res = await fetch("/api/push/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ seniorId, title, body }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (res.ok) {

@@ -24,20 +24,24 @@ export async function POST(request: Request) {
 
     const supabase = createServerSupabaseClient();
     const recordedAt = new Date();
-    const audioPath = shouldPersist
-      ? `${seniorId}/${recordedAt.toISOString().replace(/[:.]/g, "-")}.webm`
-      : "";
+    let audioPath = "";
 
     if (shouldPersist) {
-      await ensureVoiceBucket(supabase);
-      const { error: uploadError } = await supabase.storage
-        .from(voiceBucket)
-        .upload(audioPath, audioFile, {
-          contentType: audioFile.type || "audio/webm",
-          upsert: false,
-        });
+      try {
+        audioPath = `${seniorId}/${recordedAt.toISOString().replace(/[:.]/g, "-")}.webm`;
+        await ensureVoiceBucket(supabase);
+        const { error: uploadError } = await supabase.storage
+          .from(voiceBucket)
+          .upload(audioPath, audioFile, {
+            contentType: audioFile.type || "audio/webm",
+            upsert: false,
+          });
 
-      if (uploadError) throw uploadError;
+        if (uploadError) throw uploadError;
+      } catch (err) {
+        console.warn("Supabase voice upload failed/skipped:", err);
+        audioPath = ""; // reset audio path if upload failed
+      }
     }
 
     // 1. In showcase mode, we bypass OpenAI Whisper and LLM completion to use 0 tokens.
@@ -86,14 +90,18 @@ export async function POST(request: Request) {
 
     // 3. Save the log to Supabase (keeps dashboard/memories interactive!)
     if (shouldPersist) {
-      await supabase.from("voice_logs").insert({
-        senior_id: seniorId,
-        transcript: transcript,
-        sentiment_label: sentimentLabel,
-        sentiment_score: sentimentScore,
-        audio_url: audioPath,
-        timestamp: recordedAt.toISOString(),
-      });
+      try {
+        await supabase.from("voice_logs").insert({
+          senior_id: seniorId,
+          transcript: transcript,
+          sentiment_label: sentimentLabel,
+          sentiment_score: sentimentScore,
+          audio_url: audioPath,
+          timestamp: recordedAt.toISOString(),
+        });
+      } catch (err) {
+        console.warn("Supabase voice log insert failed/skipped:", err);
+      }
     }
 
     // 4. Return the audio to play on the frontend!
@@ -102,7 +110,9 @@ export async function POST(request: Request) {
         headers: {
           "Content-Type": "audio/mpeg",
           "X-Transcript": encodeURIComponent(transcript),
-          "X-Reply": encodeURIComponent(replyText)
+          "X-Reply": encodeURIComponent(replyText),
+          "X-Sentiment-Label": sentimentLabel,
+          "X-Sentiment-Score": String(sentimentScore),
         },
       });
     } else {
@@ -110,6 +120,8 @@ export async function POST(request: Request) {
       return NextResponse.json({
         transcript,
         reply: replyText,
+        sentimentLabel,
+        sentimentScore,
         error: "Voice synthesis failed, check ElevenLabs key."
       });
     }

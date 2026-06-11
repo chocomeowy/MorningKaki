@@ -7,6 +7,13 @@ interface PushSendRequest {
   title?: string;
   body?: string;
   url?: string;
+  subscriptions?: {
+    endpoint: string;
+    keys: {
+      p256dh: string;
+      auth: string;
+    };
+  }[];
 }
 
 interface PushSubscriptionRow {
@@ -33,23 +40,43 @@ if (publicVapidKey && privateVapidKey) {
 
 export async function POST(request: Request) {
   try {
-    const { seniorId, title, body, url } = (await request.json()) as PushSendRequest;
+    const { seniorId, title, body, url, subscriptions: reqSubscriptions } = (await request.json()) as PushSendRequest;
 
     if (!seniorId) {
       return NextResponse.json({ error: "Missing seniorId" }, { status: 400 });
     }
 
-    // Get the senior's magic token and subscriptions from Supabase
-    const [{ data: senior }, { data: subscriptions, error }] = await Promise.all([
-      supabase.from('seniors').select('magic_token').eq('id', seniorId).single(),
-      supabase.from('push_subscriptions').select('*').eq('senior_id', seniorId)
-    ]);
+    let subscriptions: PushSubscriptionRow[] = [];
+    let magicToken: string | undefined = undefined;
 
-    if (error || !subscriptions || subscriptions.length === 0) {
+    // Use subscriptions from request if provided
+    if (reqSubscriptions && reqSubscriptions.length > 0) {
+      subscriptions = reqSubscriptions.map((sub) => ({
+        endpoint: sub.endpoint,
+        p256dh: sub.keys?.p256dh || "",
+        auth: sub.keys?.auth || "",
+      }));
+    } else {
+      // Get the senior's magic token and subscriptions from Supabase, catch errors gracefully
+      try {
+        const [{ data: senior }, { data: dbSubscriptions }] = await Promise.all([
+          supabase.from('seniors').select('magic_token').eq('id', seniorId).maybeSingle(),
+          supabase.from('push_subscriptions').select('*').eq('senior_id', seniorId)
+        ]);
+        if (senior) magicToken = senior.magic_token;
+        if (dbSubscriptions) {
+          subscriptions = dbSubscriptions as PushSubscriptionRow[];
+        }
+      } catch (err) {
+        console.warn("Supabase push subscription lookup failed/skipped:", err);
+      }
+    }
+
+    if (subscriptions.length === 0) {
       return NextResponse.json({ error: "No active push subscriptions found" }, { status: 404 });
     }
 
-    const seniorUrl = senior?.magic_token ? `/s/${senior.magic_token}` : "/";
+    const seniorUrl = magicToken ? `/s/${magicToken}` : "/";
 
     const payload = JSON.stringify({
       title: title || "🌅 Good morning!",
@@ -57,7 +84,7 @@ export async function POST(request: Request) {
       url: url || seniorUrl
     });
 
-    const sendPromises = (subscriptions as PushSubscriptionRow[]).map((sub) => {
+    const sendPromises = subscriptions.map((sub) => {
       const pushSubscription = {
         endpoint: sub.endpoint,
         keys: {

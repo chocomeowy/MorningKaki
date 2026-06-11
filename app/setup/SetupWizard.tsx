@@ -17,6 +17,11 @@ import { StepContent } from "./_components/StepContent";
 import { setupSteps } from "./setup-data";
 import { supabase } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import {
+  saveLocalSenior,
+  saveLocalMedications,
+  saveLocalReminders,
+} from "@/lib/local-db";
 
 export interface MedicationDraft {
   id: string;
@@ -269,75 +274,101 @@ function WizardFooter({
             context.setData((prev) => ({ ...prev, isSaving: true }));
             
             const token = context.data.magicToken || crypto.randomUUID();
-            let savedId = context.data.seniorId;
+            const savedId = context.data.seniorId || crypto.randomUUID();
             
-            if (savedId) {
-              const { error } = await supabase.from("seniors").update({
-                nickname: context.data.nickname,
-                full_name: context.data.fullName,
-                primary_language: context.data.language,
-                morning_time: context.data.timings.morning,
-                quiet_start: context.data.timings.quietStart,
-                quiet_end: context.data.timings.quietEnd,
-              }).eq("id", savedId);
+            // 1. Prepare data structures for local db
+            const seniorProfile = {
+              id: savedId,
+              nickname: context.data.nickname,
+              full_name: context.data.fullName,
+              primary_language: context.data.language,
+              magic_token: token,
+              morning_time: context.data.timings.morning,
+              quiet_start: context.data.timings.quietStart,
+              quiet_end: context.data.timings.quietEnd,
+              created_at: new Date().toISOString(),
+            };
 
-              if (error) {
-                context.setData((prev) => ({ ...prev, isSaving: false }));
-                window.alert(error.message);
-                return;
+            const medicationsToSave = context.data.medications
+              .filter((med) => med.name.trim())
+              .map((med) => ({
+                id: med.id || crypto.randomUUID(),
+                senior_id: savedId,
+                name: med.name.trim(),
+                dosage: "",
+                schedule_times: context.data.timings.med ? [context.data.timings.med] : [],
+                created_at: new Date().toISOString(),
+              }));
+
+            const remindersToSave = context.data.reminders
+              .filter((rem) => rem.name.trim())
+              .map((rem) => ({
+                id: rem.id || crypto.randomUUID(),
+                senior_id: savedId,
+                text: rem.location.trim() ? `${rem.name.trim()} (${rem.location.trim()})` : rem.name.trim(),
+                remind_at: `${rem.date || getSingaporeDateString()}T${rem.time}:00+08:00`,
+                recurring: false,
+                created_at: new Date().toISOString(),
+              }));
+
+            // 2. Save locally first
+            saveLocalSenior(seniorProfile);
+            saveLocalMedications(savedId, medicationsToSave);
+            saveLocalReminders(savedId, remindersToSave);
+
+            // 3. Attempt Supabase write in background, catch errors silently so wizard is not blocked
+            try {
+              if (context.data.seniorId) {
+                await supabase.from("seniors").update({
+                  nickname: context.data.nickname,
+                  full_name: context.data.fullName,
+                  primary_language: context.data.language,
+                  morning_time: context.data.timings.morning,
+                  quiet_start: context.data.timings.quietStart,
+                  quiet_end: context.data.timings.quietEnd,
+                }).eq("id", savedId);
+              } else {
+                await supabase.from("seniors").insert({
+                  id: savedId,
+                  nickname: context.data.nickname,
+                  full_name: context.data.fullName,
+                  primary_language: context.data.language,
+                  magic_token: token,
+                  morning_time: context.data.timings.morning,
+                  quiet_start: context.data.timings.quietStart,
+                  quiet_end: context.data.timings.quietEnd,
+                });
               }
-            } else {
-              const { data, error } = await supabase.from("seniors").insert({
-                nickname: context.data.nickname,
-                full_name: context.data.fullName,
-                primary_language: context.data.language,
-                magic_token: token,
-                morning_time: context.data.timings.morning,
-                quiet_start: context.data.timings.quietStart,
-                quiet_end: context.data.timings.quietEnd,
-              }).select("id").single();
-              
-              if (error || !data) {
-                context.setData((prev) => ({ ...prev, isSaving: false }));
-                window.alert(error?.message || "Could not create the senior profile. Please try again.");
-                return;
-              }
 
-              savedId = data.id;
-            }
-
-            // Save medications (replace all for this senior)
-            const medicationsToSave = context.data.medications.filter((med) => med.name.trim());
-            if (savedId) {
+              // Medications Supabase
               await supabase.from("medications").delete().eq("senior_id", savedId);
               if (medicationsToSave.length > 0) {
                 await supabase.from("medications").insert(
                   medicationsToSave.map((med) => ({
+                    id: med.id,
                     senior_id: savedId,
-                    name: med.name.trim(),
-                    dosage: "",
-                    schedule_times: context.data.timings.med ? [context.data.timings.med] : [],
+                    name: med.name,
+                    dosage: med.dosage,
+                    schedule_times: med.schedule_times,
                   }))
                 );
               }
-            }
 
-            // Save reminders (replace all for this senior)
-            const remindersToSave = context.data.reminders.filter((rem) => rem.name.trim());
-            if (savedId) {
+              // Reminders Supabase
               await supabase.from("reminders").delete().eq("senior_id", savedId);
               if (remindersToSave.length > 0) {
                 await supabase.from("reminders").insert(
-                  remindersToSave.map((rem) => {
-                    return {
-                      senior_id: savedId,
-                      text: rem.location.trim() ? `${rem.name.trim()} (${rem.location.trim()})` : rem.name.trim(),
-                      remind_at: `${rem.date || getSingaporeDateString()}T${rem.time}:00+08:00`,
-                      recurring: false,
-                    };
-                  })
+                  remindersToSave.map((rem) => ({
+                    id: rem.id,
+                    senior_id: savedId,
+                    text: rem.text,
+                    remind_at: rem.remind_at,
+                    recurring: rem.recurring,
+                  }))
                 );
               }
+            } catch (err) {
+              console.warn("Supabase database sync failed/skipped in SetupWizard:", err);
             }
 
             context.setData((prev) => ({ ...prev, magicToken: token, seniorId: savedId, isSaving: false }));

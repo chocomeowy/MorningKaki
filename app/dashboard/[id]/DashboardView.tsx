@@ -3,6 +3,14 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
+import {
+  getLocalSeniorById,
+  getLocalMedications,
+  getLocalReminders,
+  getLocalMoodLogs,
+  getLocalVoiceLogs,
+  saveLocalSenior,
+} from "@/lib/local-db";
 
 import {
   AlertTriangle,
@@ -61,6 +69,15 @@ export function DashboardView({ id }: { id: string }) {
     async function loadSenior() {
       if (id && id !== "demo" && id !== "[id]") {
         setLoadError(null);
+        // 1. Try local storage first
+        const localSenior = getLocalSeniorById(id);
+        if (localSenior) {
+          setSenior(localSenior);
+          window.localStorage.setItem(returnPathKey, `/dashboard/${localSenior.id}`);
+          return;
+        }
+
+        // 2. Fallback to Supabase
         try {
           const { data, error } = await supabase
             .from("seniors")
@@ -222,25 +239,53 @@ function StatusGrid({ seniorId }: { seniorId: string }) {
   useEffect(() => {
     async function loadMetrics() {
       const today = new Date().toISOString().split("T")[0];
-      const [moodRes, medRes, remRes, voiceRes] = await Promise.all([
-        supabase
-          .from("mood_logs")
-          .select("sticker_type, timestamp")
-          .eq("senior_id", seniorId)
-          .gte("timestamp", `${today}T00:00:00+08:00`)
-          .order("timestamp", { ascending: false })
-          .limit(1),
-        supabase.from("medications").select("id").eq("senior_id", seniorId),
-        supabase.from("reminders").select("id, acknowledged_at").eq("senior_id", seniorId),
-        fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`),
-      ]);
-      const voiceData = await voiceRes.json();
+      // Load from local storage first
+      const localMeds = getLocalMedications(seniorId);
+      const localRems = getLocalReminders(seniorId);
+      const localMoods = getLocalMoodLogs(seniorId);
+      const localVoice = getLocalVoiceLogs(seniorId);
 
-      setMood((moodRes.data?.[0] as MoodLog | undefined) ?? null);
-      setMedCount(medRes.data?.length ?? 0);
-      setReminderCount(remRes.data?.length ?? 0);
-      setAcknowledgedCount(remRes.data?.filter((item) => item.acknowledged_at).length ?? 0);
-      setVoiceLogs(voiceData.logs ?? []);
+      const todayLocalMoods = localMoods.filter((m) => m.timestamp.startsWith(today));
+      const latestLocalMood = todayLocalMoods[todayLocalMoods.length - 1];
+
+      setMood(latestLocalMood ? { sticker_type: latestLocalMood.sticker_type, timestamp: latestLocalMood.timestamp } : null);
+      setMedCount(localMeds.length);
+      setReminderCount(localRems.length);
+      setAcknowledgedCount(localRems.filter((item) => item.acknowledged_at).length);
+      setVoiceLogs(localVoice as any[]);
+
+      // Attempt Supabase fetch as backup
+      try {
+        const [moodRes, medRes, remRes, voiceRes] = await Promise.all([
+          supabase
+            .from("mood_logs")
+            .select("sticker_type, timestamp")
+            .eq("senior_id", seniorId)
+            .gte("timestamp", `${today}T00:00:00+08:00`)
+            .order("timestamp", { ascending: false })
+            .limit(1),
+          supabase.from("medications").select("id").eq("senior_id", seniorId),
+          supabase.from("reminders").select("id, acknowledged_at").eq("senior_id", seniorId),
+          fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`),
+        ]);
+        
+        if (moodRes.data && moodRes.data.length > 0) {
+          setMood((moodRes.data[0] as MoodLog) ?? null);
+        }
+        if (medRes.data && medRes.data.length > 0) {
+          setMedCount(medRes.data.length);
+        }
+        if (remRes.data && remRes.data.length > 0) {
+          setReminderCount(remRes.data.length);
+          setAcknowledgedCount(remRes.data.filter((item) => item.acknowledged_at).length);
+        }
+        const voiceData = await voiceRes.json();
+        if (voiceData.logs && voiceData.logs.length > 0) {
+          setVoiceLogs(voiceData.logs);
+        }
+      } catch (err) {
+        console.warn("Supabase loadMetrics failed/skipped:", err);
+      }
     }
 
     loadMetrics();
@@ -267,15 +312,28 @@ function TodayPanel({ seniorId }: { seniorId: string }) {
 
   useEffect(() => {
     async function loadData() {
-      const [mRes, rRes, voiceRes] = await Promise.all([
-        supabase.from("medications").select("*").eq("senior_id", seniorId),
-        supabase.from("reminders").select("*").eq("senior_id", seniorId).gte("remind_at", new Date().toISOString().split('T')[0]),
-        fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`),
-      ]);
-      const voiceData = await voiceRes.json();
-      setMeds(mRes.data || []);
-      setRems(rRes.data || []);
-      setVoiceLogs(voiceData.logs ?? []);
+      // Load local storage first
+      const localMeds = getLocalMedications(seniorId);
+      const localRems = getLocalReminders(seniorId);
+      const localVoice = getLocalVoiceLogs(seniorId);
+
+      setMeds(localMeds);
+      setRems(localRems);
+      setVoiceLogs(localVoice as any[]);
+
+      try {
+        const [mRes, rRes, voiceRes] = await Promise.all([
+          supabase.from("medications").select("*").eq("senior_id", seniorId),
+          supabase.from("reminders").select("*").eq("senior_id", seniorId).gte("remind_at", new Date().toISOString().split('T')[0]),
+          fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`),
+        ]);
+        if (mRes.data && mRes.data.length > 0) setMeds(mRes.data);
+        if (rRes.data && rRes.data.length > 0) setRems(rRes.data);
+        const voiceData = await voiceRes.json();
+        if (voiceData.logs && voiceData.logs.length > 0) setVoiceLogs(voiceData.logs);
+      } catch (err) {
+        console.warn("Supabase loadData failed/skipped in TodayPanel:", err);
+      }
       setLoading(false);
     }
     loadData();
@@ -329,14 +387,28 @@ function ManagePanel({ senior, setSenior }: { senior: any; setSenior: (s: any) =
 
   const handleUpdate = async () => {
     setIsSaving(true);
-    const { data, error } = await supabase
-      .from("seniors")
-      .update({ nickname, morning_time: morningTime })
-      .eq("id", senior.id)
-      .select()
-      .single();
     
-    if (!error && data) setSenior(data);
+    // Save to local storage first
+    const updatedSenior = {
+      ...senior,
+      nickname,
+      morning_time: morningTime,
+    };
+    saveLocalSenior(updatedSenior);
+    setSenior(updatedSenior);
+
+    try {
+      const { data, error } = await supabase
+        .from("seniors")
+        .update({ nickname, morning_time: morningTime })
+        .eq("id", senior.id)
+        .select()
+        .single();
+      
+      if (!error && data) setSenior(data);
+    } catch (err) {
+      console.warn("Supabase update failed/skipped in ManagePanel:", err);
+    }
     setIsSaving(false);
   };
 
@@ -389,43 +461,63 @@ function TrendsPanel({ seniorId }: { seniorId: string }) {
 
   useEffect(() => {
     async function loadTrends() {
-      const [voiceRes, remRes] = await Promise.all([
-        fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`),
-        supabase
-          .from("reminders")
-          .select("remind_at, acknowledged_at")
-          .eq("senior_id", seniorId)
-          .order("remind_at", { ascending: true }),
-      ]);
-      const voiceData = await voiceRes.json();
-      const voiceLogs = (voiceData.logs ?? []) as VoiceLog[];
+      // Load local storage first
+      const localVoice = getLocalVoiceLogs(seniorId);
+      const localRems = getLocalReminders(seniorId);
 
-      setSentimentData(
-        voiceLogs
-          .filter((log) => log.timestamp)
-          .slice(0, 7)
-          .reverse()
-          .map((log) => ({
-            day: formatShortDate(log.timestamp),
-            score: log.sentimentScore,
-          })),
-      );
+      const processTrends = (voiceLogs: any[], reminders: any[]) => {
+        setSentimentData(
+          voiceLogs
+            .filter((log) => log.timestamp)
+            .slice(0, 7)
+            .reverse()
+            .map((log) => ({
+              day: formatShortDate(log.timestamp),
+              score: log.sentimentScore || 50,
+            })),
+        );
 
-      const grouped = new Map<string, { total: number; done: number }>();
-      (remRes.data ?? []).forEach((reminder) => {
-        const day = formatShortDate(reminder.remind_at);
-        const current = grouped.get(day) ?? { total: 0, done: 0 };
-        grouped.set(day, {
-          total: current.total + 1,
-          done: current.done + (reminder.acknowledged_at ? 1 : 0),
+        const grouped = new Map<string, { total: number; done: number }>();
+        reminders.forEach((reminder) => {
+          const day = formatShortDate(reminder.remind_at);
+          const current = grouped.get(day) ?? { total: 0, done: 0 };
+          grouped.set(day, {
+            total: current.total + 1,
+            done: current.done + (reminder.acknowledged_at ? 1 : 0),
+          });
         });
-      });
-      setReminderData(
-        Array.from(grouped.entries()).map(([day, value]) => ({
-          day,
-          adherence: value.total > 0 ? Math.round((value.done / value.total) * 100) : 0,
-        })),
-      );
+        setReminderData(
+          Array.from(grouped.entries()).map(([day, value]) => ({
+            day,
+            adherence: value.total > 0 ? Math.round((value.done / value.total) * 100) : 0,
+          })),
+        );
+      };
+
+      processTrends(localVoice, localRems);
+
+      try {
+        const [voiceRes, remRes] = await Promise.all([
+          fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`),
+          supabase
+            .from("reminders")
+            .select("remind_at, acknowledged_at")
+            .eq("senior_id", seniorId)
+            .order("remind_at", { ascending: true }),
+        ]);
+        const voiceData = await voiceRes.json();
+        const serverVoiceLogs = (voiceData.logs ?? []) as any[];
+        const serverReminders = (remRes.data ?? []) as any[];
+
+        if (serverVoiceLogs.length > 0 || serverReminders.length > 0) {
+          processTrends(
+            serverVoiceLogs.length > 0 ? serverVoiceLogs : localVoice,
+            serverReminders.length > 0 ? serverReminders : localRems
+          );
+        }
+      } catch (err) {
+        console.warn("Supabase loadTrends failed/skipped:", err);
+      }
     }
 
     loadTrends();
@@ -473,9 +565,19 @@ function MemoriesPanel({ seniorId }: { seniorId: string }) {
 
   useEffect(() => {
     async function loadVoiceLogs() {
-      const response = await fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`);
-      const data = await response.json();
-      setVoiceLogs(data.logs ?? []);
+      // Load local storage first
+      const localLogs = getLocalVoiceLogs(seniorId);
+      setVoiceLogs(localLogs as any[]);
+
+      try {
+        const response = await fetch(`/api/voice-logs?seniorId=${encodeURIComponent(seniorId)}`);
+        const data = await response.json();
+        if (data.logs && data.logs.length > 0) {
+          setVoiceLogs(data.logs);
+        }
+      } catch (err) {
+        console.warn("Supabase loadVoiceLogs failed/skipped in MemoriesPanel:", err);
+      }
       setLoading(false);
     }
 
