@@ -226,3 +226,102 @@ export function saveLocalSubscription(seniorId: string, subscription: any): void
   }
   writeJSON(KEYS.PUSH_SUBSCRIPTIONS, all);
 }
+
+// --- URL Serialization for Self-Contained Sharing ---
+
+export interface SetupWizardSerializedData {
+  fullName: string;
+  nickname: string;
+  language: string;
+  medications: { id: string; name: string; timing: string }[];
+  reminders: { id: string; name: string; date: string; time: string; location: string }[];
+  timings: {
+    morning: string;
+    med: string;
+    quietStart: string;
+    quietEnd: string;
+  };
+}
+
+export function serializeSetupData(data: SetupWizardSerializedData): string {
+  try {
+    const payload = {
+      n: data.nickname,
+      fn: data.fullName,
+      l: data.language,
+      m: data.medications.filter((med) => med.name.trim()).map((med) => ({
+        n: med.name.trim(),
+        t: data.timings.med ? [data.timings.med] : [],
+      })),
+      r: data.reminders.filter((rem) => rem.name.trim()).map((rem) => ({
+        t: rem.location.trim() ? `${rem.name.trim()} (${rem.location.trim()})` : rem.name.trim(),
+        d: `${rem.date || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" })}T${rem.time}:00+08:00`,
+      })),
+      t: {
+        m: data.timings.morning,
+        qs: data.timings.quietStart,
+        qe: data.timings.quietEnd,
+      }
+    };
+    const jsonStr = JSON.stringify(payload);
+    // Safe Base64 encoding supporting unicode
+    const b64 = isBrowser 
+      ? window.btoa(unescape(encodeURIComponent(jsonStr))) 
+      : Buffer.from(jsonStr).toString("base64");
+    return b64;
+  } catch (err) {
+    console.error("Failed to serialize setup data:", err);
+    return "";
+  }
+}
+
+export function deserializeAndSaveSetupData(token: string, base64Data: string): Senior | null {
+  try {
+    const jsonStr = isBrowser
+      ? decodeURIComponent(escape(window.atob(base64Data)))
+      : Buffer.from(base64Data, "base64").toString("utf-8");
+    const payload = JSON.parse(jsonStr);
+    
+    const seniorId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+    
+    const seniorProfile: Senior = {
+      id: seniorId,
+      nickname: payload.n || "Ah Gong",
+      full_name: payload.fn || "Ah Gong",
+      primary_language: payload.l || "en",
+      secondary_language: null,
+      magic_token: token,
+      morning_time: payload.t?.m || "07:30",
+      quiet_start: payload.t?.qs || "21:00",
+      quiet_end: payload.t?.qe || "07:00",
+      created_at: new Date().toISOString(),
+    };
+
+    const medications: Medication[] = (payload.m || []).map((med: any) => ({
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+      senior_id: seniorId,
+      name: med.n,
+      dosage: "",
+      schedule_times: med.t || [],
+      created_at: new Date().toISOString(),
+    }));
+
+    const reminders: Reminder[] = (payload.r || []).map((rem: any) => ({
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+      senior_id: seniorId,
+      text: rem.t,
+      remind_at: rem.d,
+      recurring: false,
+      acknowledged_at: null,
+    }));
+
+    saveLocalSenior(seniorProfile);
+    saveLocalMedications(seniorId, medications);
+    saveLocalReminders(seniorId, reminders);
+
+    return seniorProfile;
+  } catch (err) {
+    console.error("Failed to deserialize setup data:", err);
+    return null;
+  }
+}

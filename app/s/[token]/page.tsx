@@ -1,9 +1,9 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, Suspense } from "react";
 import { SeniorClient } from "./SeniorClient";
-import { getSeniorByToken } from "@/lib/local-db";
-import { notFound } from "next/navigation";
+import { getSeniorByToken, deserializeAndSaveSetupData } from "@/lib/local-db";
+import { notFound, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 interface SeniorProfile {
@@ -17,9 +17,10 @@ interface SeniorProfile {
   quiet_end?: string;
 }
 
-export default function SeniorPage(props: { params: Promise<{ token: string }> }) {
-  const params = use(props.params);
-  const { token } = params;
+function SeniorPageContent(props: { token: string }) {
+  const { token } = props;
+  const searchParams = useSearchParams();
+  const serializedData = searchParams ? searchParams.get("d") : null;
   const [senior, setSenior] = useState<SeniorProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -43,7 +44,20 @@ export default function SeniorPage(props: { params: Promise<{ token: string }> }
         return;
       }
 
-      // 2. Fallback to Supabase query (catch errors silently)
+      // 2. Try deserializing from query param if available
+      if (serializedData) {
+        const decodedSenior = deserializeAndSaveSetupData(token, serializedData);
+        if (decodedSenior) {
+          setSenior(decodedSenior);
+          if (typeof window !== "undefined") {
+            window.history.replaceState({}, "", window.location.pathname);
+          }
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 3. Fallback to Supabase query (catch errors silently)
       try {
         const { data } = await supabase
           .from("seniors")
@@ -62,7 +76,7 @@ export default function SeniorPage(props: { params: Promise<{ token: string }> }
     }
 
     resolveSenior();
-  }, [token]);
+  }, [token, serializedData]);
 
   if (loading) {
     return (
@@ -77,4 +91,19 @@ export default function SeniorPage(props: { params: Promise<{ token: string }> }
   }
 
   return <SeniorClient senior={senior} />;
+}
+
+export default function SeniorPage(props: { params: Promise<{ token: string }> }) {
+  const params = use(props.params);
+  const { token } = params;
+
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-[#fff8ed]">
+        <p className="text-xl font-bold text-amber-800 animate-pulse">Loading morning...</p>
+      </div>
+    }>
+      <SeniorPageContent token={token} />
+    </Suspense>
+  );
 }

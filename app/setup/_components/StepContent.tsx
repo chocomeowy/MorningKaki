@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -20,6 +21,7 @@ import { BackgroundDesignPicker } from "./BackgroundDesignPicker";
 import { MedicationRows, ReminderRows } from "./EditableSetupRows";
 import { useWizard } from "../SetupWizard";
 import type { WizardData } from "../SetupWizard";
+import { serializeSetupData } from "@/lib/local-db";
 import {
   Choice,
   ComingSoon,
@@ -192,7 +194,11 @@ function ShareStep({ data }: { data: WizardData }) {
   // If the component mounts but magicToken isn't set yet (because DB insertion is async), 
   // it might flash empty. We'll use the origin URL if available.
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "https://morningkaki.vercel.app";
-  const finalLink = data?.magicToken ? `${baseUrl}/s/${data.magicToken}` : `${baseUrl}/s/...`;
+  const finalLink = useMemo(() => {
+    if (!data?.magicToken) return `${baseUrl}/s/...`;
+    const b64 = serializeSetupData(data);
+    return `${baseUrl}/s/${data.magicToken}${b64 ? `?d=${encodeURIComponent(b64)}` : ""}`;
+  }, [data, baseUrl]);
 
   return (
     <StepShell
